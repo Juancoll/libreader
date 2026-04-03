@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import ePub from 'epubjs';
 import type { Book, Rendition, NavItem } from 'epubjs';
+import type { LocationChangedEvent, SpineSection, RenditionWithManager } from '@/types/epubjs';
+import type Contents from 'epubjs/types/contents';
 import type { FSAdapter } from '@/services/vaultParser';
 import { writeAllReadingData } from '@/services/annotationWriter';
 import type { Annotation, HighlightColor } from '@/types/annotation';
@@ -181,7 +183,7 @@ export function EpubReader({ filePath, fs, onClose, onProgress }: EpubReaderProp
           const data = await fs.readBinaryFile(filePath);
           if (cancelled) return;
 
-          book = ePub(data as any);
+          book = ePub(data);
           bookRef.current = book;
           needsLocations = true;
 
@@ -213,12 +215,12 @@ export function EpubReader({ filePath, fs, onClose, onProgress }: EpubReaderProp
         registerHighlightStyles(rendition);
 
         // Location tracking
-        rendition.on('locationChanged', (loc: any) => {
+        rendition.on('locationChanged', (loc: LocationChangedEvent) => {
           if (cancelled) return;
           const cfi = loc.start?.cfi || '';
           setCurrentCfi(cfi);
 
-          if (book!.locations && (book!.locations as any).length()) {
+          if (book!.locations && book!.locations.length()) {
             const pct = book!.locations.percentageFromCfi(cfi);
             const p = Math.round(pct * 100);
             setProgress(p);
@@ -229,7 +231,7 @@ export function EpubReader({ filePath, fs, onClose, onProgress }: EpubReaderProp
           saveToStorage(getStorageKey('', filePath, 'position'), cfi);
         });
 
-        rendition.on('rendered', (section: any) => {
+        rendition.on('rendered', (section: SpineSection) => {
           if (cancelled) return;
           const navItem = book!.navigation.toc.find(
             (item: NavItem) => item.href && section.href?.includes(item.href.split('#')[0])
@@ -239,7 +241,7 @@ export function EpubReader({ filePath, fs, onClose, onProgress }: EpubReaderProp
 
         // Text selection -> highlight popup
         // Convert iframe-local coordinates to wrapper-relative coordinates
-        rendition.on('selected', (cfiRange: string, contents: any) => {
+        rendition.on('selected', (cfiRange: string, contents: Contents) => {
           if (cancelled) return;
           book!.getRange(cfiRange).then((range: Range | undefined) => {
             if (!range) return;
@@ -469,7 +471,7 @@ export function EpubReader({ filePath, fs, onClose, onProgress }: EpubReaderProp
     setSelectionPopup(null);
     // Clear selection in iframe
     try {
-      const doc = (r as any)?.manager?.container?.querySelector('iframe')?.contentDocument;
+      const doc = (r as RenditionWithManager)?.manager?.container?.querySelector('iframe')?.contentDocument;
       doc?.getSelection()?.removeAllRanges();
     } catch { /* ok */ }
   }, [ann, chapter]);
@@ -508,10 +510,10 @@ export function EpubReader({ filePath, fs, onClose, onProgress }: EpubReaderProp
     const book = bookRef.current;
     if (!book) return [];
     const results: SearchResult[] = [];
-    const spine = book.spine as any;
+    const spine = book.spine;
     // spine.each is sync, but we need to load each section
-    const spineItems: any[] = [];
-    spine.each((item: any) => spineItems.push(item));
+    const spineItems: SpineSection[] = [];
+    spine.each((item: SpineSection) => spineItems.push(item));
 
     for (const item of spineItems) {
       try {
@@ -541,8 +543,8 @@ export function EpubReader({ filePath, fs, onClose, onProgress }: EpubReaderProp
   const saveToVault = useCallback(async () => {
     try {
       const book = bookRef.current;
-      const totalPages = book && (book.locations as any).length()
-        ? (book.locations as any).length()
+      const totalPages = book && book.locations.length()
+        ? book.locations.length()
         : 0;
 
       await writeAllReadingData(fs, filePath, {
@@ -908,7 +910,7 @@ export function EpubReader({ filePath, fs, onClose, onProgress }: EpubReaderProp
           onChange={(e) => {
             const pct = Number(e.target.value) / 100;
             const book = bookRef.current;
-            if (book && (book.locations as any).length()) {
+            if (book && book.locations.length()) {
               const cfi = book.locations.cfiFromPercentage(pct);
               renditionRef.current?.display(cfi);
             }
@@ -948,11 +950,11 @@ function getRenditionOptions(mode: ViewMode) {
   const base = { width: '100%', height: '100%' };
   switch (mode) {
     case 'scroll':
-      return { ...base, manager: 'continuous' as any, flow: 'scrolled' as any, spread: 'none' as any };
+      return { ...base, manager: 'continuous', flow: 'scrolled', spread: 'none' };
     case 'spread':
-      return { ...base, flow: 'paginated' as any, spread: 'always' as any, minSpreadWidth: 0 };
+      return { ...base, flow: 'paginated', spread: 'always', minSpreadWidth: 0 };
     default:
-      return { ...base, flow: 'paginated' as any, spread: 'none' as any };
+      return { ...base, flow: 'paginated', spread: 'none' };
   }
 }
 
