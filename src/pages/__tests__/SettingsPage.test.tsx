@@ -9,6 +9,8 @@ import { useLibraryStore } from '@/store/libraryStore';
 // Mock hooks that depend on browser APIs
 const mockRequestAccess = vi.fn().mockResolvedValue(true);
 const mockDisconnect = vi.fn().mockResolvedValue(undefined);
+const mockSetNativeVaultPath = vi.fn().mockResolvedValue(false);
+const mockGetNativeVaultPath = vi.fn().mockReturnValue('');
 
 vi.mock('@/hooks/useFileSystem', () => ({
   useFileSystem: vi.fn(() => ({
@@ -17,8 +19,11 @@ vi.mock('@/hooks/useFileSystem', () => ({
     isRestoring: false,
     rootName: '',
     error: null,
+    isNative: false,
     requestAccess: mockRequestAccess,
     disconnect: mockDisconnect,
+    setNativeVaultPath: mockSetNativeVaultPath,
+    getNativeVaultPath: mockGetNativeVaultPath,
   })),
 }));
 
@@ -49,8 +54,11 @@ beforeEach(() => {
     isRestoring: false,
     rootName: '',
     error: null,
+    isNative: false,
     requestAccess: mockRequestAccess,
     disconnect: mockDisconnect,
+    setNativeVaultPath: mockSetNativeVaultPath,
+    getNativeVaultPath: mockGetNativeVaultPath,
   });
 });
 
@@ -96,8 +104,11 @@ describe('SettingsPage', () => {
       isRestoring: false,
       rootName: 'my-vault',
       error: null,
+      isNative: false,
       requestAccess: mockRequestAccess,
       disconnect: mockDisconnect,
+      setNativeVaultPath: mockSetNativeVaultPath,
+      getNativeVaultPath: mockGetNativeVaultPath,
     });
     renderPage();
     expect(screen.getByText('Conectado')).toBeInTheDocument();
@@ -110,8 +121,11 @@ describe('SettingsPage', () => {
       isRestoring: false,
       rootName: 'my-vault',
       error: null,
+      isNative: false,
       requestAccess: mockRequestAccess,
       disconnect: mockDisconnect,
+      setNativeVaultPath: mockSetNativeVaultPath,
+      getNativeVaultPath: mockGetNativeVaultPath,
     });
     renderPage();
     expect(screen.getByText('my-vault')).toBeInTheDocument();
@@ -124,8 +138,11 @@ describe('SettingsPage', () => {
       isRestoring: false,
       rootName: 'my-vault',
       error: null,
+      isNative: false,
       requestAccess: mockRequestAccess,
       disconnect: mockDisconnect,
+      setNativeVaultPath: mockSetNativeVaultPath,
+      getNativeVaultPath: mockGetNativeVaultPath,
     });
     renderPage();
     expect(screen.getByText('Cambiar vault')).toBeInTheDocument();

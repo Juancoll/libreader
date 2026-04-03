@@ -10,6 +10,8 @@ import { useLibraryStore } from '@/store/libraryStore';
 // Mock hooks
 const mockRequestAccess = vi.fn().mockResolvedValue(true);
 const mockDisconnect = vi.fn().mockResolvedValue(undefined);
+const mockSetNativeVaultPath = vi.fn().mockResolvedValue(false);
+const mockGetNativeVaultPath = vi.fn().mockReturnValue('');
 
 vi.mock('@/hooks/useFileSystem', () => ({
   useFileSystem: vi.fn(() => ({
@@ -18,8 +20,11 @@ vi.mock('@/hooks/useFileSystem', () => ({
     isRestoring: false,
     rootName: '',
     error: null,
+    isNative: false,
     requestAccess: mockRequestAccess,
     disconnect: mockDisconnect,
+    setNativeVaultPath: mockSetNativeVaultPath,
+    getNativeVaultPath: mockGetNativeVaultPath,
   })),
 }));
 
@@ -54,8 +59,11 @@ function fsMock(overrides: Record<string, unknown> = {}) {
     isRestoring: false,
     rootName: '',
     error: null as string | null,
+    isNative: false,
     requestAccess: mockRequestAccess,
     disconnect: mockDisconnect,
+    setNativeVaultPath: mockSetNativeVaultPath,
+    getNativeVaultPath: mockGetNativeVaultPath,
     ...overrides,
   };
 }

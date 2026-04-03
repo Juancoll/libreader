@@ -1,18 +1,118 @@
 /**
  * Capacitor Filesystem Adapter
- * Used when running as a native app (iOS, Android, Desktop via Capacitor).
- * Falls back to WebFSAdapter on web.
+ * Used when running as a native app (Android via Capacitor).
+ *
+ * Lifecycle methods (requestAccess, tryRestore, disconnect, isReady, getRootName, cleanup)
+ * mirror WebFSAdapter's interface so useFileSystem can switch between them seamlessly.
+ *
+ * On native, the vault path is stored in localStorage (no IndexedDB handles needed).
+ * The user configures the path via Settings; requestAccess() is a no-op that returns
+ * true if a path is already set (the actual path selection happens in the UI).
  */
 
 import { Filesystem, Directory, Encoding } from '@capacitor/filesystem';
 import type { FSAdapter, DirEntry } from './vaultParser';
 
-export class CapacitorFSAdapter implements FSAdapter {
-  private basePath: string;
+/** Capacitor global injected by the native shell. */
+interface CapacitorGlobal {
+  isNativePlatform(): boolean;
+  convertFileSrc(uri: string): string;
+}
 
-  constructor(basePath: string) {
-    this.basePath = basePath;
+/** Access the Capacitor global safely. */
+function getCapacitorGlobal(): CapacitorGlobal | undefined {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return (window as any).Capacitor as CapacitorGlobal | undefined;
+}
+
+const VAULT_PATH_KEY = 'libreader-native-vault-path';
+
+export class CapacitorFSAdapter implements FSAdapter {
+  private basePath: string = '';
+  private ready: boolean = false;
+
+  // --- Lifecycle methods (matching WebFSAdapter shape) ---
+
+  /**
+   * On native, requestAccess is called after the user sets a path via setVaultPath().
+   * Returns true if the path exists and is accessible.
+   */
+  async requestAccess(): Promise<boolean> {
+    const stored = localStorage.getItem(VAULT_PATH_KEY);
+    if (!stored) return false;
+
+    const accessible = await this.validatePath(stored);
+    if (accessible) {
+      this.basePath = stored;
+      this.ready = true;
+    }
+    return accessible;
   }
+
+  /**
+   * Restore vault connection from persisted path on app restart.
+   */
+  async tryRestore(): Promise<boolean> {
+    const stored = localStorage.getItem(VAULT_PATH_KEY);
+    if (!stored) return false;
+
+    const accessible = await this.validatePath(stored);
+    if (accessible) {
+      this.basePath = stored;
+      this.ready = true;
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * Disconnect: clear the stored path and reset state.
+   */
+  async disconnect(): Promise<void> {
+    this.basePath = '';
+    this.ready = false;
+    localStorage.removeItem(VAULT_PATH_KEY);
+  }
+
+  isReady(): boolean {
+    return this.ready;
+  }
+
+  getRootName(): string {
+    if (!this.basePath) return '';
+    const parts = this.basePath.split('/').filter(Boolean);
+    return parts[parts.length - 1] || '';
+  }
+
+  cleanup(): void {
+    // No resources to clean up on native
+  }
+
+  /**
+   * Set the vault path (called from UI). Stores in localStorage and validates.
+   * Returns true if the path is valid and accessible.
+   */
+  async setVaultPath(path: string): Promise<boolean> {
+    const trimmed = path.trim();
+    if (!trimmed) return false;
+
+    const accessible = await this.validatePath(trimmed);
+    if (accessible) {
+      localStorage.setItem(VAULT_PATH_KEY, trimmed);
+      this.basePath = trimmed;
+      this.ready = true;
+    }
+    return accessible;
+  }
+
+  /**
+   * Get the currently configured vault path.
+   */
+  getVaultPath(): string {
+    return this.basePath || localStorage.getItem(VAULT_PATH_KEY) || '';
+  }
+
+  // --- FSAdapter interface ---
 
   private resolvePath(path: string): string {
     if (path.startsWith('/')) return path;
@@ -103,7 +203,22 @@ export class CapacitorFSAdapter implements FSAdapter {
       directory: Directory.External,
     });
     // Convert to web-viewable URL
-    return (window as any).Capacitor?.convertFileSrc(result.uri) || result.uri;
+    const cap = getCapacitorGlobal();
+    return cap ? cap.convertFileSrc(result.uri) : result.uri;
+  }
+
+  // --- Private helpers ---
+
+  private async validatePath(path: string): Promise<boolean> {
+    try {
+      await Filesystem.readdir({
+        path,
+        directory: Directory.External,
+      });
+      return true;
+    } catch {
+      return false;
+    }
   }
 }
 
@@ -111,5 +226,10 @@ export class CapacitorFSAdapter implements FSAdapter {
  * Detect if running inside Capacitor native shell.
  */
 export function isCapacitorNative(): boolean {
-  return !!(window as any).Capacitor?.isNativePlatform();
+  try {
+    const cap = getCapacitorGlobal();
+    return !!cap && typeof cap.isNativePlatform === 'function' && cap.isNativePlatform();
+  } catch {
+    return false;
+  }
 }

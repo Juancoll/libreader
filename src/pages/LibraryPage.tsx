@@ -6,13 +6,14 @@ import { useVaultLoader } from '@/hooks/useVaultLoader';
 import { ItemGrid } from '@/components/library/ItemGrid';
 
 export function LibraryPage() {
-  const { fs, isReady, isRestoring, rootName, error: fsError, requestAccess } = useFileSystem();
+  const { fs, isReady, isRestoring, rootName, error: fsError, requestAccess, isNative, setNativeVaultPath, getNativeVaultPath } = useFileSystem();
   const items = useFilteredItems({ libraryOnly: true });
   const allItems = useLibraryStore((s) => s.items);
   const vaultConfig = useLibraryStore((s) => s.vaultConfig);
   const isLoading = useLibraryStore((s) => s.isLoading);
   const { loadVault } = useVaultLoader();
   const [loadTime, setLoadTime] = useState<number | null>(null);
+  const [nativePath, setNativePath] = useState(getNativeVaultPath());
 
   // Total items in showInLibrary folders (before user filters)
   const libraryTotal = useMemo(() => {
@@ -29,11 +30,19 @@ export function LibraryPage() {
   }, [loadVault]);
 
   const handleOpenVault = useCallback(async () => {
-    const ok = await requestAccess();
-    if (ok) {
-      await handleReload();
+    if (isNative) {
+      // On native, set the vault path first, then load
+      const ok = await setNativeVaultPath(nativePath);
+      if (ok) {
+        await handleReload();
+      }
+    } else {
+      const ok = await requestAccess();
+      if (ok) {
+        await handleReload();
+      }
     }
-  }, [requestAccess, handleReload]);
+  }, [isNative, nativePath, requestAccess, setNativeVaultPath, handleReload]);
 
   // Restoring saved handle - show loading indicator
   if (isRestoring) {
@@ -60,21 +69,34 @@ export function LibraryPage() {
           <div>
             <h2 className="text-2xl font-bold text-text">Bienvenido a LibReader</h2>
             <p className="mt-2 text-text-secondary">
-              Selecciona tu vault de Obsidian para comenzar a explorar tu biblioteca.
+              {isNative
+                ? 'Ingresa la ruta de tu vault de Obsidian en el dispositivo.'
+                : 'Selecciona tu vault de Obsidian para comenzar a explorar tu biblioteca.'}
             </p>
           </div>
+          {isNative && (
+            <input
+              type="text"
+              value={nativePath}
+              onChange={(e) => setNativePath(e.target.value)}
+              placeholder="/storage/emulated/0/Documents/library"
+              className="w-full px-4 py-3 rounded-lg border border-border bg-background text-text font-mono text-sm focus:outline-none focus:border-primary"
+            />
+          )}
           <button
             onClick={handleOpenVault}
-            className="px-6 py-3 bg-primary text-white rounded-lg font-medium hover:bg-primary-hover transition-colors shadow-sm"
+            disabled={isNative && !nativePath.trim()}
+            className="px-6 py-3 bg-primary text-white rounded-lg font-medium hover:bg-primary-hover transition-colors shadow-sm disabled:opacity-50"
           >
-            Abrir Vault de Obsidian
+            {isNative ? 'Conectar Vault' : 'Abrir Vault de Obsidian'}
           </button>
           {fsError && (
             <p className="text-sm text-danger">{fsError}</p>
           )}
           <p className="text-xs text-text-muted">
-            Se necesita acceso al directorio para leer los archivos de tu biblioteca.
-            No se sube nada a ningun servidor.
+            {isNative
+              ? 'Ingresa la ruta completa del directorio. Los archivos se leen localmente, no se sube nada.'
+              : 'Se necesita acceso al directorio para leer los archivos de tu biblioteca. No se sube nada a ningun servidor.'}
           </p>
         </div>
       </div>

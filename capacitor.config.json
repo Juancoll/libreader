@@ -7,7 +7,7 @@
   },
   "plugins": {
     "Filesystem": {
-      "directory": "Documents"
+      "directory": "ExternalStorage"
     }
   }
 }

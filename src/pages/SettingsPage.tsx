@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { useCallback, useState } from 'react';
 import { useLibraryStore } from '@/store/libraryStore';
 import { useFileSystem } from '@/hooks/useFileSystem';
 import { useVaultLoader } from '@/hooks/useVaultLoader';
@@ -12,21 +12,30 @@ export function SettingsPage() {
   const setTheme = useLibraryStore((s) => s.setTheme);
   const items = useLibraryStore((s) => s.items);
   const setItems = useLibraryStore((s) => s.setItems);
-  const { isReady, rootName, requestAccess, disconnect } = useFileSystem();
+  const { isReady, rootName, requestAccess, disconnect, isNative, setNativeVaultPath, getNativeVaultPath, error: fsError } = useFileSystem();
   const { loadVault } = useVaultLoader();
+  const [nativePath, setNativePath] = useState(getNativeVaultPath());
 
   const handleDisconnect = useCallback(async () => {
     await disconnect();
     setItems([]);
+    setNativePath('');
     clearVaultCache().catch(() => {});
   }, [disconnect, setItems]);
 
   const handleChangeVault = useCallback(async () => {
-    const ok = await requestAccess();
-    if (ok) {
-      await loadVault();
+    if (isNative) {
+      const ok = await setNativeVaultPath(nativePath);
+      if (ok) {
+        await loadVault();
+      }
+    } else {
+      const ok = await requestAccess();
+      if (ok) {
+        await loadVault();
+      }
     }
-  }, [requestAccess, loadVault]);
+  }, [isNative, nativePath, requestAccess, setNativeVaultPath, loadVault]);
 
   const updateFolder = (index: number, updates: Partial<VaultFolder>) => {
     const newFolders = vaultConfig.folders.map((f, i) =>
@@ -85,30 +94,45 @@ export function SettingsPage() {
         </div>
 
         {/* Vault action buttons */}
-        <div className="flex gap-3">
-          {isReady ? (
-            <>
+        <div className="flex flex-col gap-3">
+          {isNative && (
+            <input
+              type="text"
+              value={nativePath}
+              onChange={(e) => setNativePath(e.target.value)}
+              placeholder="/storage/emulated/0/Documents/library"
+              className="w-full px-3 py-2 rounded-lg border border-border bg-background text-text font-mono text-sm focus:outline-none focus:border-primary"
+            />
+          )}
+          {fsError && (
+            <p className="text-sm text-danger">{fsError}</p>
+          )}
+          <div className="flex gap-3">
+            {isReady ? (
+              <>
+                <button
+                  onClick={handleChangeVault}
+                  className="px-4 py-2 text-sm font-medium rounded-lg border border-border text-text-secondary hover:bg-surface-hover transition-colors"
+                >
+                  Cambiar vault
+                </button>
+                <button
+                  onClick={handleDisconnect}
+                  className="px-4 py-2 text-sm font-medium rounded-lg border border-danger/30 text-danger hover:bg-danger/10 transition-colors"
+                >
+                  Desconectar
+                </button>
+              </>
+            ) : (
               <button
                 onClick={handleChangeVault}
-                className="px-4 py-2 text-sm font-medium rounded-lg border border-border text-text-secondary hover:bg-surface-hover transition-colors"
+                disabled={isNative && !nativePath.trim()}
+                className="px-4 py-2 text-sm font-medium rounded-lg bg-primary text-white hover:bg-primary-hover transition-colors disabled:opacity-50"
               >
-                Cambiar vault
+                Conectar vault
               </button>
-              <button
-                onClick={handleDisconnect}
-                className="px-4 py-2 text-sm font-medium rounded-lg border border-danger/30 text-danger hover:bg-danger/10 transition-colors"
-              >
-                Desconectar
-              </button>
-            </>
-          ) : (
-            <button
-              onClick={handleChangeVault}
-              className="px-4 py-2 text-sm font-medium rounded-lg bg-primary text-white hover:bg-primary-hover transition-colors"
-            >
-              Conectar vault
-            </button>
-          )}
+            )}
+          </div>
         </div>
       </section>
 

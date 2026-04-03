@@ -1,18 +1,32 @@
 # LibReader — Project Status
 
-Last updated: 2026-04-01
+Last updated: 2026-04-03
 
 ## What's Done
 
 ### Core Infrastructure
 - [x] Vite + React + TypeScript + Tailwind v4 + Zustand + React Router setup
 - [x] File System Access API integration (WebFSAdapter) with IndexedDB reconnection
+- [x] **Capacitor filesystem integration (CapacitorFSAdapter)** with native path-based access
+- [x] **Platform detection** — `useFileSystem` auto-selects WebFSAdapter (web) or CapacitorFSAdapter (native)
 - [x] Vault parser: scans folders, parses frontmatter, resolves covers, detects formats
 - [x] Zustand store with localStorage persistence
 - [x] Routing: Library, Item Detail, Folder, Settings pages
 - [x] Layout: sidebar navigation, mobile header, theme support (light/dark/system)
 - [x] Library grid/list views with search, sort, and filter
-- [x] Welcome screen when no vault configured
+- [x] Welcome screen when no vault configured (web: directory picker, native: path input)
+
+### Android / Capacitor
+- [x] `@capacitor/android` installed, `android/` project scaffolded
+- [x] `CapacitorFSAdapter` with full lifecycle methods (requestAccess, tryRestore, disconnect, isReady, getRootName, cleanup, setVaultPath, getVaultPath)
+- [x] `useFileSystem` hook: platform detection via `isCapacitorNative()`, adapter switching
+- [x] Native vault path input on LibraryPage welcome screen and SettingsPage
+- [x] Vault path persisted in localStorage (`libreader-native-vault-path`)
+- [x] `index.html` updated: viewport-fit=cover, safe area insets, mobile-web-app-capable
+- [x] Android permissions: READ/WRITE_EXTERNAL_STORAGE (API <=32), MANAGE_EXTERNAL_STORAGE (API 30+), READ_MEDIA_IMAGES/AUDIO (API 33+)
+- [x] `requestLegacyExternalStorage` for Android 10 compatibility
+- [x] `capacitor.config.json`: androidScheme https, ExternalStorage directory
+- [x] `cap sync android` completed — web assets deployed to android project
 
 ### Readers
 - [x] **ComicReader** (~1303 lines + extracted modules) — CBZ (fflate) + CBR (libarchive.js WASM)
@@ -113,13 +127,13 @@ Last updated: 2026-04-01
   - Extracted `ItemGrid` component (~98 lines) — eliminated ~90 lines duplicated between LibraryPage + FolderPage
   - Consolidated `formatDuration` and `loadFromStorage`/`saveToStorage` duplicates
 - [x] **Phase 3**: Polish
-  - StatsPage: replaced 8 hardcoded colors with theme tokens (bg-success, bg-primary, bg-danger, bg-text-muted, bg-accent, text-success, text-primary, text-text-muted)
+  - StatsPage: replaced 8 hardcoded colors with theme tokens
   - FilterBar: debounced search input (250ms delay)
   - Memoized: FilterBar `scopedItems`, LibraryPage folder breakdown
-  - Removed empty directories: `src/utils/`, `src/components/book/`, `src/components/common/`
+  - Removed empty directories
 
 ### Tests
-- [x] 255 unit tests passing across 10 files (Vitest)
+- [x] 429 unit tests passing across 20 files (Vitest)
 - [x] 15 E2E tests (Playwright)
 
 ### Documentation (`_ai/`)
@@ -146,15 +160,17 @@ Last updated: 2026-04-01
 
 ## What's Next
 
-### Short Term
-- Extract PdfReader components (bring under ~1500 lines)
-- Auto-activate annotate mode on text-less PDF pages (use `textlessPagesRef`)
-- Test gestures on tablet (user wants to verify before moving forward)
-- Capacitor integration (iOS/Android native filesystem)
+### Short Term (Capacitor Android — remaining)
+- Build and test on actual Android device/emulator
+- Verify filesystem permissions prompt works correctly on Android
+- Test vault path resolution on Android (typical path: `/storage/emulated/0/Documents/library`)
+- Test all readers work in Capacitor WebView (epub.js iframe, pdfjs worker, libarchive WASM)
+- Handle Android back button (hardware) for reader close
 
 ### Medium Term
 - Search within EPUB/PDF content
 - Reading statistics / progress dashboard
+- Extract PdfReader components (bring under ~1500 lines)
 
 ### Future
 - Offline PWA support
