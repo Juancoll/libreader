@@ -31,7 +31,6 @@ export function LibraryPage() {
 
   const handleOpenVault = useCallback(async () => {
     if (isNative) {
-      // On native, set the vault path first, then load
       const ok = await setNativeVaultPath(nativePath);
       if (ok) {
         await handleReload();
@@ -43,6 +42,20 @@ export function LibraryPage() {
       }
     }
   }, [isNative, nativePath, requestAccess, setNativeVaultPath, handleReload]);
+
+  // Whether we have items to show (even while still loading more)
+  const hasAnyItems = allItems.length > 0;
+
+  // Folder breakdown label (memoized to avoid recalculating on every render)
+  const folderBreakdown = useMemo(() => {
+    if (!hasAnyItems) return '';
+    const folders = allItems.reduce((acc, item) => {
+      const key = item.folder || 'sin carpeta';
+      acc[key] = (acc[key] || 0) + 1;
+      return acc;
+    }, {} as Record<string, number>);
+    return Object.entries(folders).map(([f, c]) => `${f}: ${c}`).join(' | ');
+  }, [allItems, hasAnyItems]);
 
   // Restoring saved handle - show loading indicator
   if (isRestoring) {
@@ -102,20 +115,6 @@ export function LibraryPage() {
       </div>
     );
   }
-
-  // Whether we have items to show (even while still loading more)
-  const hasAnyItems = allItems.length > 0;
-
-  // Folder breakdown label (memoized to avoid recalculating on every render)
-  const folderBreakdown = useMemo(() => {
-    if (!hasAnyItems) return '';
-    const folders = allItems.reduce((acc, item) => {
-      const key = item.folder || 'sin carpeta';
-      acc[key] = (acc[key] || 0) + 1;
-      return acc;
-    }, {} as Record<string, number>);
-    return Object.entries(folders).map(([f, c]) => `${f}: ${c}`).join(' | ');
-  }, [allItems, hasAnyItems]);
 
   return (
     <div className="p-4 lg:p-6 space-y-4">
