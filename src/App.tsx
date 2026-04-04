@@ -1,11 +1,12 @@
-import { lazy, Suspense, useEffect } from 'react';
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { lazy, Suspense, useCallback, useEffect } from 'react';
+import { BrowserRouter, Routes, Route, useNavigate, useLocation } from 'react-router-dom';
 import { Layout } from '@/components/layout/Layout';
 import { LibraryPage } from '@/pages/LibraryPage';
 import { BookDetailPage } from '@/pages/BookDetailPage';
 import { FolderPage } from '@/pages/FolderPage';
 import { SettingsPage } from '@/pages/SettingsPage';
 import { useLibraryStore } from '@/store/libraryStore';
+import { useBackButton } from '@/hooks/useBackButton';
 
 const StatsPage = lazy(() => import('@/pages/StatsPage'));
 
@@ -31,10 +32,34 @@ function ThemeProvider({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+/**
+ * App-level Android back button handler.
+ * Navigates back in history, or minimizes the app if at the root route.
+ * This is the lowest-priority handler — readers override it via useReaderKeyboard.
+ */
+function AppBackButton() {
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  const handleBack = useCallback(() => {
+    if (location.pathname === '/') {
+      // At root — minimize the app instead of exiting
+      import('@capacitor/app').then(({ App }) => App.minimizeApp());
+    } else {
+      navigate(-1);
+    }
+  }, [location.pathname, navigate]);
+
+  useBackButton(handleBack);
+
+  return null;
+}
+
 export default function App() {
   return (
     <ThemeProvider>
       <BrowserRouter>
+        <AppBackButton />
         <Layout>
           <Routes>
             <Route path="/" element={<LibraryPage />} />

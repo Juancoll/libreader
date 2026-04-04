@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { useBackButton } from './useBackButton';
 
 /**
  * Key bindings that each reader provides.
@@ -44,6 +45,9 @@ export interface KeyBindings {
  *
  * Provides the standard guard (skip INPUT/TEXTAREA/contentEditable)
  * and dispatches to the reader's key bindings.
+ *
+ * On Capacitor native, also listens for the Android hardware back button
+ * and maps it to the escape binding (cascadeClose).
  *
  * @param bindings Key action map from the reader
  * @param extraListener Optional: also register on another event target (e.g. EPUB rendition)
@@ -129,4 +133,9 @@ export function useReaderKeyboard(
   // NOTE: no dependency array — re-registers every render to always have latest bindings.
   // This is intentional: the callbacks close over current state and must stay fresh.
   // The cost is minimal (addEventListener/removeEventListener on each render).
+
+  // Android hardware back button — maps to escape (cascadeClose).
+  // Uses the centralized back button stack so reader handlers take priority
+  // over the app-level navigation handler.
+  useBackButton(() => bindings.escape());
 }
