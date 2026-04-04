@@ -73,8 +73,13 @@ export async function renderTextLayer(
 
   // Clear previous text layer
   container.innerHTML = '';
-  container.style.width = `${viewport.width}px`;
-  container.style.height = `${viewport.height}px`;
+
+  // Set CSS variables needed by the pdf.js text layer CSS rules.
+  // --total-scale-factor drives font-size, --scale-round-x/y are used for rounding.
+  // In the official viewer: --total-scale-factor = viewport.scale * userUnit (userUnit=1).
+  container.style.setProperty('--total-scale-factor', `${viewport.scale}`);
+  container.style.setProperty('--scale-round-x', '1px');
+  container.style.setProperty('--scale-round-y', '1px');
 
   const hasText = textContent.items.length > 0;
 
@@ -87,6 +92,13 @@ export async function renderTextLayer(
 
     await textLayer.render();
   }
+
+  // Set explicit dimensions at viewport (render) resolution AFTER render,
+  // because the TextLayer constructor calls setLayerDimensions which may set
+  // calc()-based dimensions that depend on CSS vars like --scale-round-x.
+  // We override with fixed values to ensure consistent sizing.
+  container.style.width = `${viewport.width}px`;
+  container.style.height = `${viewport.height}px`;
 
   return hasText;
 }

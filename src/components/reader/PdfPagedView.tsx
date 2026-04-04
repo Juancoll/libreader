@@ -102,7 +102,8 @@ export function PdfPagedView({
     return () => ro.disconnect();
   }, [computeDisplayDims]);
 
-  // Sync text layer scale: text layer is at render resolution, CSS display is smaller
+  // Sync text layer scale: text layer is at render resolution, CSS display is smaller.
+  // Applies a CSS scale transform so spans (positioned at render coords) map onto the visible canvas.
   const syncTextLayerScale = useCallback(() => {
     function sync(canvas: HTMLCanvasElement | null, textLayer: HTMLDivElement | null) {
       if (!canvas || !textLayer || canvas.width === 0) return;
@@ -161,11 +162,14 @@ export function PdfPagedView({
         }
       }
 
-      // Compute display dims then sync text layer
+      // Compute display dims then sync text layer (double rAF to ensure
+      // the browser has applied the new layout before we read clientWidth)
       if (!cancelled) {
         requestAnimationFrame(() => {
           computeDisplayDims();
-          syncTextLayerScale();
+          requestAnimationFrame(() => {
+            if (!cancelled) syncTextLayerScale();
+          });
         });
       }
     }
@@ -174,7 +178,19 @@ export function PdfPagedView({
     return () => { cancelled = true; };
   }, [pdfDoc, currentPage, scale, showSecond, highlights, textlessPagesRef, computeDisplayDims, syncTextLayerScale]);
 
-  // Re-sync text layer whenever display dims change
+  // Re-sync text layer whenever canvas display size changes (ResizeObserver is more
+  // reliable than depending on state changes, since the canvas CSS dimensions might
+  // update asynchronously after layout).
+  useEffect(() => {
+    const canvases = [canvasRef.current, canvas2Ref.current].filter(Boolean) as HTMLCanvasElement[];
+    if (canvases.length === 0) return;
+
+    const ro = new ResizeObserver(() => syncTextLayerScale());
+    canvases.forEach((c) => ro.observe(c));
+    return () => ro.disconnect();
+  }, [syncTextLayerScale, showSecond]);
+
+  // Also sync after display dims change (for the initial render path)
   useEffect(() => {
     syncTextLayerScale();
   }, [displayDims, syncTextLayerScale]);
