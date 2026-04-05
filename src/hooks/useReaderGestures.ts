@@ -154,6 +154,10 @@ export function useReaderGestures(
     // Tap threshold: too much movement or too long = not a tap
     if (dist >= 15 || elapsed >= 400) return;
 
+    // If there's an active text selection, don't fire tap zone (the user just finished selecting text)
+    const sel = window.getSelection();
+    if (sel && sel.toString().trim().length > 0) return;
+
     // Double-tap detection (when enabled)
     if (doubleTapZoom) {
       const now = Date.now();
