@@ -7,6 +7,7 @@ import type {
   ViewMode,
   VaultConfig,
 } from '@/types';
+import type { AnnotationCategory } from '@/types/annotation';
 
 interface LibraryState {
   // Data
@@ -23,6 +24,12 @@ interface LibraryState {
   vaultConfig: VaultConfig;
   theme: 'light' | 'dark' | 'system';
 
+  // Annotation categories
+  annotationCategories: AnnotationCategory[];
+
+  // Search highlight color (hex)
+  searchHighlightColor: string;
+
   // Actions
   setItems: (items: LibraryItem[]) => void;
   setFilter: (filter: Partial<LibraryFilter>) => void;
@@ -33,6 +40,13 @@ interface LibraryState {
   setError: (error: string | null) => void;
   setVaultConfig: (config: Partial<VaultConfig>) => void;
   setTheme: (theme: 'light' | 'dark' | 'system') => void;
+  setSearchHighlightColor: (color: string) => void;
+
+  // Category CRUD
+  addCategory: (category: AnnotationCategory) => void;
+  updateCategory: (id: string, updates: Partial<Omit<AnnotationCategory, 'id'>>) => void;
+  removeCategory: (id: string) => void;
+  reorderCategories: (categories: AnnotationCategory[]) => void;
 }
 
 const defaultVaultConfig: VaultConfig = {
@@ -65,6 +79,12 @@ export const useLibraryStore = create<LibraryState>()(
       vaultConfig: defaultVaultConfig,
       theme: 'system',
 
+      // Annotation categories
+      annotationCategories: [],
+
+      // Search highlight color — bright orange by default
+      searchHighlightColor: '#ff6b00',
+
       // Actions
       setItems: (items) => set({ items }),
       setFilter: (filter) =>
@@ -79,6 +99,25 @@ export const useLibraryStore = create<LibraryState>()(
           vaultConfig: { ...state.vaultConfig, ...config },
         })),
       setTheme: (theme) => set({ theme }),
+      setSearchHighlightColor: (color) => set({ searchHighlightColor: color }),
+
+      // Category CRUD
+      addCategory: (category) =>
+        set((state) => ({
+          annotationCategories: [...state.annotationCategories, category],
+        })),
+      updateCategory: (id, updates) =>
+        set((state) => ({
+          annotationCategories: state.annotationCategories.map((c) =>
+            c.id === id ? { ...c, ...updates } : c,
+          ),
+        })),
+      removeCategory: (id) =>
+        set((state) => ({
+          annotationCategories: state.annotationCategories.filter((c) => c.id !== id),
+        })),
+      reorderCategories: (categories) =>
+        set({ annotationCategories: categories }),
     }),
     {
       name: 'libreader-storage',
@@ -87,6 +126,8 @@ export const useLibraryStore = create<LibraryState>()(
         theme: state.theme,
         viewMode: state.viewMode,
         sort: state.sort,
+        annotationCategories: state.annotationCategories,
+        searchHighlightColor: state.searchHighlightColor,
       }),
     }
   )

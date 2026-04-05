@@ -48,6 +48,8 @@ export interface HighlightEntry {
   page?: number;
   text: string;
   color: string;
+  /** Category name (resolved from AnnotationCategory, if any) */
+  category?: string;
   note: string;
   chapter?: string;
   createdAt: string;
@@ -187,7 +189,8 @@ export async function writeAnnotations(
       }
 
       for (const hl of chapterHighlights) {
-        body.push(`> [!quote] ${hl.color}`);
+        const label = hl.category ? `${hl.color} — ${hl.category}` : hl.color;
+        body.push(`> [!quote] ${label}`);
         body.push(`> ${hl.text.replace(/\n/g, '\n> ')}`);
         if (hl.note) {
           body.push('');
@@ -237,4 +240,59 @@ function detectFormatFromPath(path: string): string {
   const ext = path.split('.').pop()?.toLowerCase() || '';
   if (['epub', 'pdf', 'cbz', 'cbr', 'md', 'youtube'].includes(ext)) return ext;
   return 'unknown';
+}
+
+// ---- Search History ----
+
+export interface SearchHistoryEntry {
+  /** Search query */
+  query: string;
+  /** Number of results found */
+  resultCount: number;
+  /** ISO date string */
+  date: string;
+}
+
+/**
+ * Load search history for a given file from the vault.
+ */
+export async function loadSearchHistory(
+  fs: FSAdapter,
+  filePath: string,
+): Promise<SearchHistoryEntry[]> {
+  const dir = getReadingDirPath(filePath);
+  try {
+    const raw = await fs.readFile(`${dir}/search-history.json`);
+    const data = JSON.parse(raw);
+    if (Array.isArray(data)) return data;
+    return [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Save a search entry to the history for a given file.
+ * Deduplicates by query (updates existing entry's date and resultCount).
+ * Keeps the most recent 50 entries.
+ */
+export async function saveSearchHistoryEntry(
+  fs: FSAdapter,
+  filePath: string,
+  entry: SearchHistoryEntry,
+): Promise<SearchHistoryEntry[]> {
+  const dir = getReadingDirPath(filePath);
+  await fs.mkdir(dir);
+
+  const existing = await loadSearchHistory(fs, filePath);
+
+  // Remove any previous entry with the same query (case-insensitive)
+  const lowerQuery = entry.query.toLowerCase();
+  const filtered = existing.filter((e) => e.query.toLowerCase() !== lowerQuery);
+
+  // Prepend new entry (most recent first)
+  const updated = [entry, ...filtered].slice(0, 50);
+
+  await fs.writeFile(`${dir}/search-history.json`, JSON.stringify(updated, null, 2));
+  return updated;
 }

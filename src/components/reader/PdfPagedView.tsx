@@ -6,9 +6,10 @@
 import { useRef, useState, useCallback, useEffect } from 'react';
 import type * as pdfjsLib from 'pdfjs-dist';
 import type { Annotation } from '@/types/annotation';
-import { HIGHLIGHT_COLORS } from '@/types/annotation';
+import { resolveAnnotationFill } from '@/types/annotation';
+import { useLibraryStore } from '@/store/libraryStore';
 import type { PageLayout, SelectionInfo, RegionDrag, PendingRegion } from './pdfUtils';
-import { renderPageToCanvas, renderTextLayer, applyHighlightsToTextLayer, resolveSelection } from './pdfUtils';
+import { renderPageToCanvas, renderTextLayer, applyHighlightsToTextLayer, applySearchHighlightToTextLayer, resolveSelection } from './pdfUtils';
 
 interface PdfPagedViewProps {
   pdfDoc: pdfjsLib.PDFDocumentProxy;
@@ -28,6 +29,8 @@ interface PdfPagedViewProps {
   textlessPagesRef: React.MutableRefObject<Set<number>>;
   selectedAnnotationId?: string | null;
   onAnnotationClick?: (annotationId: string) => void;
+  searchQuery?: string;
+  searchHighlightColor?: string;
 }
 
 export function PdfPagedView({
@@ -48,6 +51,8 @@ export function PdfPagedView({
   textlessPagesRef,
   selectedAnnotationId,
   onAnnotationClick,
+  searchQuery,
+  searchHighlightColor,
 }: PdfPagedViewProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const canvas2Ref = useRef<HTMLCanvasElement>(null);
@@ -55,6 +60,7 @@ export function PdfPagedView({
   const textLayer2Ref = useRef<HTMLDivElement>(null);
   const page1WrapperRef = useRef<HTMLDivElement>(null);
   const outerRef = useRef<HTMLDivElement>(null);
+  const categories = useLibraryStore((s) => s.annotationCategories);
   const showSecond = pageLayout === 'dual' && currentPage + 1 <= totalPages;
   // Display dimensions: canvas rendered at scale, then CSS-sized to fit container
   const [displayDims, setDisplayDims] = useState<{ w1: number; h1: number; w2: number; h2: number }>({ w1: 0, h1: 0, w2: 0, h2: 0 });
@@ -137,7 +143,11 @@ export function PdfPagedView({
           }
           // Apply highlights for this page
           const pageHl = highlights.filter((h) => h.position.index === currentPage);
-          applyHighlightsToTextLayer(textLayerRef.current, pageHl);
+          applyHighlightsToTextLayer(textLayerRef.current, pageHl, categories);
+          // Apply search highlights
+          if (searchQuery) {
+            applySearchHighlightToTextLayer(textLayerRef.current, searchQuery, searchHighlightColor || '#ff6b00');
+          }
         } catch (err) {
           console.warn('Error rendering page:', err);
         }
@@ -156,7 +166,11 @@ export function PdfPagedView({
             textlessPagesRef.current.delete(currentPage + 1);
           }
           const pageHl = highlights.filter((h) => h.position.index === currentPage + 1);
-          applyHighlightsToTextLayer(textLayer2Ref.current, pageHl);
+          applyHighlightsToTextLayer(textLayer2Ref.current, pageHl, categories);
+          // Apply search highlights
+          if (searchQuery) {
+            applySearchHighlightToTextLayer(textLayer2Ref.current, searchQuery, searchHighlightColor || '#ff6b00');
+          }
         } catch (err) {
           console.warn('Error rendering page 2:', err);
         }
@@ -176,7 +190,7 @@ export function PdfPagedView({
 
     render();
     return () => { cancelled = true; };
-  }, [pdfDoc, currentPage, scale, showSecond, highlights, textlessPagesRef, computeDisplayDims, syncTextLayerScale]);
+  }, [pdfDoc, currentPage, scale, showSecond, highlights, textlessPagesRef, computeDisplayDims, syncTextLayerScale, searchQuery, searchHighlightColor]);
 
   // Re-sync text layer whenever canvas display size changes (ResizeObserver is more
   // reliable than depending on state changes, since the canvas CSS dimensions might
@@ -285,10 +299,10 @@ export function PdfPagedView({
             top: `${ann.region!.y * 100}%`,
             width: `${ann.region!.w * 100}%`,
             height: `${ann.region!.h * 100}%`,
-            backgroundColor: HIGHLIGHT_COLORS[ann.style.color].fill,
+            backgroundColor: resolveAnnotationFill(ann.style, categories),
             border: isSelected
               ? '2px solid rgba(59,130,246,0.9)'
-              : `2px solid ${HIGHLIGHT_COLORS[ann.style.color].fill.replace(/[\d.]+\)$/, '0.8)')}`,
+              : `2px solid ${resolveAnnotationFill(ann.style, categories).replace(/[\d.]+\)$/, '0.8)')}`,
             borderRadius: '2px',
             boxShadow: isSelected ? '0 0 8px rgba(59,130,246,0.4)' : 'none',
           }}

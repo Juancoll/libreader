@@ -69,6 +69,8 @@ export interface HighlightStyle {
   color: HighlightColor;
   /** Opacity of the highlight overlay, 0–1 (default 0.3) */
   opacity?: number;
+  /** Optional category ID — links to a user-defined AnnotationCategory */
+  categoryId?: string;
 }
 
 /** Color config for rendering highlights in the UI */
@@ -79,6 +81,66 @@ export const HIGHLIGHT_COLORS: Record<HighlightColor, { fill: string; label: str
   red: { fill: 'rgba(234,67,53,0.3)', label: 'Rojo' },
   purple: { fill: 'rgba(156,39,176,0.3)', label: 'Morado' },
 };
+
+// ---- Annotation Categories ----
+
+export interface AnnotationCategory {
+  /** Unique identifier */
+  id: string;
+  /** User-facing name (e.g. "Vocabulario", "Idea clave") */
+  name: string;
+  /** Hex color string (e.g. "#ff6b6b") — used for highlight fill */
+  color: string;
+  /** Optional description */
+  description: string;
+}
+
+/**
+ * Convert a hex color to an rgba fill string with 0.3 opacity for highlights.
+ */
+export function hexToHighlightFill(hex: string): string {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return `rgba(${r},${g},${b},0.3)`;
+}
+
+/**
+ * Resolve the fill color for an annotation.
+ * If the annotation has a categoryId and matching category exists, use the category's color.
+ * Otherwise fall back to HIGHLIGHT_COLORS[style.color].
+ */
+export function resolveAnnotationFill(
+  style: HighlightStyle,
+  categories: AnnotationCategory[],
+): string {
+  if (style.categoryId) {
+    const cat = categories.find((c) => c.id === style.categoryId);
+    if (cat) return hexToHighlightFill(cat.color);
+  }
+  return HIGHLIGHT_COLORS[style.color]?.fill ?? HIGHLIGHT_COLORS.yellow.fill;
+}
+
+/**
+ * Resolve the category name for an annotation (if any).
+ */
+export function resolveAnnotationCategoryName(
+  style: HighlightStyle,
+  categories: AnnotationCategory[],
+): string | undefined {
+  if (style.categoryId) {
+    const cat = categories.find((c) => c.id === style.categoryId);
+    if (cat) return cat.name;
+  }
+  return undefined;
+}
+
+/**
+ * Generate a unique ID for a category.
+ */
+export function generateCategoryId(): string {
+  return `cat_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+}
 
 // ---- The main entity ----
 

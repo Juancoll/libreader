@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import * as pdfjsLib from 'pdfjs-dist';
 import type { FSAdapter } from '@/services/vaultParser';
-import { writeAllReadingData } from '@/services/annotationWriter';
-import { HIGHLIGHT_COLORS, isBookmark as isBookmarkAnnotation } from '@/types/annotation';
+import { writeAllReadingData, loadSearchHistory, saveSearchHistoryEntry } from '@/services/annotationWriter';
+import type { SearchHistoryEntry } from '@/services/annotationWriter';
+import { HIGHLIGHT_COLORS, hexToHighlightFill, isBookmark as isBookmarkAnnotation } from '@/types/annotation';
 import type { HighlightColor } from '@/types/annotation';
 import {
   toBookmarkEntries, toHighlightEntries, getHighlightsForPages,
@@ -16,11 +17,12 @@ import { useReaderUI } from '@/hooks/useReaderUI';
 import { useReaderGestures } from '@/hooks/useReaderGestures';
 import { useReaderKeyboard } from '@/hooks/useReaderKeyboard';
 import { useAnnotations } from '@/hooks/useAnnotations';
+import { useLibraryStore } from '@/store/libraryStore';
 import type { SelectionInfo, RegionDrag, PendingRegion } from './pdfUtils';
 import { PdfPagedView } from './PdfPagedView';
 import { PdfScrollPage } from './PdfScrollPage';
 import { CloseIcon, ChevronIcon, BookmarkIcon, AnnotationsDocIcon, SearchIcon } from './ReaderIcons';
-import { AnnotateModeIcon } from './PdfIcons';
+import { SinglePageIcon, DualPageIcon, PagedModeIcon, ScrollModeIcon, AnnotateModeIcon, FitWidthIcon, FitHeightIcon } from './PdfIcons';
 import { SearchPanel } from './SearchPanel';
 import type { SearchResult } from './SearchPanel';
 
@@ -54,6 +56,7 @@ export function PdfReader({ filePath, fs, onClose, onProgress }: PdfReaderProps)
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const pdfDocRef = useRef<pdfjsLib.PDFDocumentProxy | null>(null);
   const navFlashTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const categories = useLibraryStore((s) => s.annotationCategories);
 
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -72,6 +75,29 @@ export function PdfReader({ filePath, fs, onClose, onProgress }: PdfReaderProps)
   const [scale, setScale] = useState(savedSettings.scale);
 
   const isScrollMode = navMode === 'scroll-v';
+
+  // ---- Fit actions (one-shot scale computation, not a persistent mode) ----
+  const applyFit = useCallback(async (axis: 'width' | 'height') => {
+    const pdfDoc = pdfDocRef.current;
+    const container = isScrollMode
+      ? (scrollContainerRef.current ?? containerRef.current)
+      : containerRef.current;
+    if (!pdfDoc || !container) return;
+    try {
+      const page = await pdfDoc.getPage(currentPage);
+      const vp = page.getViewport({ scale: 1 });
+      const pad = 32;
+      const gap = pageLayout === 'dual' ? 8 : 0;
+      const availW = container.clientWidth - pad;
+      const availH = container.clientHeight - pad;
+      const slots = pageLayout === 'dual' ? 2 : 1;
+      const slotW = (availW - gap) / slots;
+      const fitScale = axis === 'width'
+        ? slotW / vp.width
+        : availH / vp.height;
+      setScale(Math.max(0.5, Math.min(3, +fitScale.toFixed(2))));
+    } catch { /* ignore */ }
+  }, [currentPage, pageLayout, isScrollMode]);
 
   // ---- Gesture handling (shared hook) ----
   const gestureCallbacksRef = useRef({
@@ -102,6 +128,11 @@ export function PdfReader({ filePath, fs, onClose, onProgress }: PdfReaderProps)
   const [voiceAnnotationId, setVoiceAnnotationId] = useState<string | null>(null);
   const textlessPagesRef = useRef<Set<number>>(new Set());
 
+  // Search history (persisted in vault)
+  const [searchHistory, setSearchHistory] = useState<SearchHistoryEntry[]>([]);
+  const [activeSearchQuery, setActiveSearchQuery] = useState<string>('');
+  const searchHighlightColor = useLibraryStore((s) => s.searchHighlightColor);
+
   // Persist settings
   useEffect(() => {
     saveToStorage(settingsKey, { navMode, pageLayout, scale });
@@ -114,12 +145,8 @@ export function PdfReader({ filePath, fs, onClose, onProgress }: PdfReaderProps)
     }
   }, [currentPage, totalPages, filePath]);
 
-  // Derived labels
-  const navLabel = navMode === 'paged' ? 'Paginas' : 'Scroll';
-  const layoutLabel = pageLayout === 'single' ? 'Simple' : 'Doble';
-
   // ---- Highlight actions ----
-  const addHighlightFromSelection = useCallback((sel: SelectionInfo, color: HighlightColor) => {
+  const addHighlightFromSelection = useCallback((sel: SelectionInfo, color: HighlightColor, categoryId?: string) => {
     ann.addHighlight({
       position: { index: sel.page, fraction: totalPages > 0 ? sel.page / totalPages : undefined },
       textSelection: {
@@ -130,6 +157,7 @@ export function PdfReader({ filePath, fs, onClose, onProgress }: PdfReaderProps)
         endCharOffset: sel.endCharOffset,
       },
       color,
+      categoryId,
       chapter: `Pagina ${sel.page}`,
     });
     setSelectionPopup(null);
@@ -171,39 +199,48 @@ export function PdfReader({ filePath, fs, onClose, onProgress }: PdfReaderProps)
   const isBookmarked = bookmarks.some((b) => b.position.index === currentPage);
 
   // ---- Region annotation actions ----
-  const addRegionAnnotation = useCallback((region: PendingRegion, color: HighlightColor) => {
+  const addRegionAnnotation = useCallback((region: PendingRegion, color: HighlightColor, categoryId?: string) => {
     ann.addHighlight({
       position: { index: region.page, fraction: totalPages > 0 ? region.page / totalPages : undefined },
       region: { x: region.x, y: region.y, w: region.w, h: region.h },
       color,
+      categoryId,
       chapter: `Pagina ${region.page}`,
     });
     setPendingRegion(null);
   }, [ann, totalPages]);
 
-  // Auto-disable annotate mode when switching to scroll mode
-  useEffect(() => {
-    if (isScrollMode) {
-      setAnnotateMode(false);
-      setPendingRegion(null);
-      setRegionDrag(null);
-    }
-  }, [isScrollMode]);
-
-  // Auto-activate annotate mode on text-less pages (paged mode only)
+  // Clear region annotation state when navigating pages (paged mode only)
   useEffect(() => {
     if (isScrollMode || isLoading || totalPages === 0) return;
-    // Wait a tick for rendering to populate textlessPagesRef
-    const timer = setTimeout(() => {
-      const isTextless = textlessPagesRef.current.has(currentPage);
-      setAnnotateMode(isTextless);
-      if (!isTextless) {
-        setPendingRegion(null);
-        setRegionDrag(null);
-      }
-    }, 200);
-    return () => clearTimeout(timer);
+    // Clear any in-progress region drag or pending region on page change
+    setPendingRegion(null);
+    setRegionDrag(null);
   }, [currentPage, isScrollMode, isLoading, totalPages]);
+
+  // Load search history from vault on mount
+  useEffect(() => {
+    loadSearchHistory(fs, filePath).then(setSearchHistory).catch(() => {});
+  }, [fs, filePath]);
+
+  const handleSearchCompleted = useCallback(async (entry: SearchHistoryEntry) => {
+    try {
+      const updated = await saveSearchHistoryEntry(fs, filePath, entry);
+      setSearchHistory(updated);
+    } catch (err) {
+      console.warn('Failed to save search history:', err);
+    }
+  }, [fs, filePath]);
+
+  const handleClearSearchHistory = useCallback(async () => {
+    try {
+      const dir = filePath + '.reading';
+      await fs.writeFile(`${dir}/search-history.json`, '[]');
+      setSearchHistory([]);
+    } catch (err) {
+      console.warn('Failed to clear search history:', err);
+    }
+  }, [fs, filePath]);
 
   // Highlights for current page(s)
   const currentHighlights = useMemo(() => {
@@ -223,6 +260,7 @@ export function PdfReader({ filePath, fs, onClose, onProgress }: PdfReaderProps)
     if (!pdfDoc) return [];
     const results: SearchResult[] = [];
     const lowerQuery = query.toLowerCase();
+    setActiveSearchQuery(query);
 
     for (let i = 1; i <= pdfDoc.numPages; i++) {
       try {
@@ -280,12 +318,12 @@ export function PdfReader({ filePath, fs, onClose, onProgress }: PdfReaderProps)
           pageLayout,
         },
         bookmarks: toBookmarkEntries(annotations, totalPages),
-        highlights: toHighlightEntries(annotations),
+        highlights: toHighlightEntries(annotations, categories),
       });
     } catch (err) {
       console.warn('Failed to save PDF reading state to vault:', err);
     }
-  }, [fs, filePath, currentPage, totalPages, navMode, pageLayout, annotations]);
+  }, [fs, filePath, currentPage, totalPages, navMode, pageLayout, annotations, categories]);
 
   const handleClose = useCallback(async () => {
     await saveToVault();
@@ -420,11 +458,12 @@ export function PdfReader({ filePath, fs, onClose, onProgress }: PdfReaderProps)
       clearVoiceAnnotation: () => setVoiceAnnotationId(null),
     }),
     bookmark: toggleBookmark,
-    annotate: !isScrollMode ? () => setAnnotateMode((m) => { if (m) { setPendingRegion(null); setRegionDrag(null); } return !m; }) : undefined,
+    annotate: () => setAnnotateMode((m) => { if (m) { setPendingRegion(null); setRegionDrag(null); } return !m; }),
     layout: () => setPageLayout((l) => l === 'single' ? 'dual' : 'single'),
     navMode: () => setNavMode((m) => m === 'paged' ? 'scroll-v' : 'paged'),
     zoomIn: () => setScale((s) => Math.min(3, +(s + 0.25).toFixed(2))),
     zoomOut: () => setScale((s) => Math.max(0.5, +(s - 0.25).toFixed(2))),
+    fitWidth: () => applyFit('width'),
   });
 
   const progress = totalPages > 0 ? Math.round((currentPage / totalPages) * 100) : 0;
@@ -453,34 +492,26 @@ export function PdfReader({ filePath, fs, onClose, onProgress }: PdfReaderProps)
         </div>
 
         <div className="flex items-center gap-1">
-          {/* Bookmark */}
-          <button
-            onClick={toggleBookmark}
-            className={`p-2 rounded-lg transition-colors ${isBookmarked ? 'text-primary' : 'text-text-secondary hover:bg-surface-hover'}`}
-            title="Marcador (B)"
-          >
-            <BookmarkIcon filled={isBookmarked} size={18} />
-          </button>
-
+          {/* ── Group 1: Visualizacion ── */}
           {/* Page layout */}
           <button
             onClick={() => setPageLayout((l) => l === 'single' ? 'dual' : 'single')}
-            className="px-2.5 py-1.5 rounded-lg text-xs text-text-secondary hover:bg-surface-hover transition-colors"
-            title="Layout (L)"
+            className="p-1.5 rounded-lg text-text-secondary hover:bg-surface-hover transition-colors"
+            title={pageLayout === 'single' ? 'Simple (L)' : 'Doble (L)'}
           >
-            {layoutLabel}
+            {pageLayout === 'single' ? <SinglePageIcon size={18} /> : <DualPageIcon size={18} />}
           </button>
 
           {/* Nav mode */}
           <button
             onClick={() => setNavMode((m) => m === 'paged' ? 'scroll-v' : 'paged')}
-            className="px-2.5 py-1.5 rounded-lg text-xs text-text-secondary hover:bg-surface-hover transition-colors"
-            title="Navegacion (N)"
+            className="p-1.5 rounded-lg text-text-secondary hover:bg-surface-hover transition-colors"
+            title={navMode === 'paged' ? 'Paginas (N)' : 'Scroll (N)'}
           >
-            {navLabel}
+            {navMode === 'paged' ? <PagedModeIcon size={18} /> : <ScrollModeIcon size={18} />}
           </button>
 
-          {/* Zoom */}
+          {/* Zoom controls */}
           <button
             onClick={() => setScale((s) => Math.max(0.5, +(s - 0.25).toFixed(2)))}
             className="p-2 rounded-lg hover:bg-surface-hover text-text-secondary text-sm"
@@ -499,7 +530,36 @@ export function PdfReader({ filePath, fs, onClose, onProgress }: PdfReaderProps)
             +
           </button>
 
-          {/* Annotations */}
+          {/* Fit actions */}
+          <button
+            onClick={() => applyFit('width')}
+            className="p-1.5 rounded-lg transition-colors text-text-secondary hover:bg-surface-hover"
+            title="Ajustar al ancho (F)"
+          >
+            <FitWidthIcon size={16} />
+          </button>
+          <button
+            onClick={() => applyFit('height')}
+            className="p-1.5 rounded-lg transition-colors text-text-secondary hover:bg-surface-hover"
+            title="Ajustar al alto"
+          >
+            <FitHeightIcon size={16} />
+          </button>
+
+          {/* ── Divider ── */}
+          <div className="w-px h-5 bg-border mx-1" />
+
+          {/* ── Group 2: Marcadores / Anotaciones ── */}
+          {/* Bookmark */}
+          <button
+            onClick={toggleBookmark}
+            className={`p-2 rounded-lg transition-colors ${isBookmarked ? 'text-primary' : 'text-text-secondary hover:bg-surface-hover'}`}
+            title="Marcador (B)"
+          >
+            <BookmarkIcon filled={isBookmarked} size={18} />
+          </button>
+
+          {/* Annotations panel */}
           <button
             onClick={() => ui.togglePanel('annotations')}
             className={`p-2 rounded-lg transition-colors ${ui.isPanelOpen('annotations') ? 'bg-primary/20' : 'hover:bg-surface-hover'}`}
@@ -508,25 +568,14 @@ export function PdfReader({ filePath, fs, onClose, onProgress }: PdfReaderProps)
             <AnnotationsDocIcon size={18} className="text-text-secondary" />
           </button>
 
-          {/* Search */}
+          {/* Annotate mode (region) */}
           <button
-            onClick={() => ui.togglePanel('search')}
-            className={`p-2 rounded-lg transition-colors ${ui.isPanelOpen('search') ? 'bg-primary/20' : 'hover:bg-surface-hover'}`}
-            title="Buscar en el PDF"
+            onClick={() => setAnnotateMode((m) => { if (m) { setPendingRegion(null); setRegionDrag(null); } return !m; })}
+            className={`p-2 rounded-lg transition-colors ${annotateMode ? 'bg-primary/20 text-primary' : 'hover:bg-surface-hover text-text-secondary'}`}
+            title={annotateMode ? 'Salir de modo anotar (A)' : 'Modo anotar region (A)'}
           >
-            <SearchIcon size={18} className="text-text-secondary" />
+            <AnnotateModeIcon />
           </button>
-
-          {/* Annotate mode (region) — only in paged mode */}
-          {!isScrollMode && (
-            <button
-              onClick={() => setAnnotateMode((m) => { if (m) { setPendingRegion(null); setRegionDrag(null); } return !m; })}
-              className={`p-2 rounded-lg transition-colors ${annotateMode ? 'bg-primary/20 text-primary' : 'hover:bg-surface-hover text-text-secondary'}`}
-              title={annotateMode ? 'Salir de modo anotar (A)' : 'Modo anotar region (A)'}
-            >
-              <AnnotateModeIcon />
-            </button>
-          )}
 
           {/* Voice comments */}
           <button
@@ -535,6 +584,18 @@ export function PdfReader({ filePath, fs, onClose, onProgress }: PdfReaderProps)
             title="Comentarios de voz"
           >
             <MicButtonIcon size={18} />
+          </button>
+
+          {/* ── Divider ── */}
+          <div className="w-px h-5 bg-border mx-1" />
+
+          {/* ── Group 3: Busqueda ── */}
+          <button
+            onClick={() => ui.togglePanel('search')}
+            className={`p-2 rounded-lg transition-colors ${ui.isPanelOpen('search') ? 'bg-primary/20' : 'hover:bg-surface-hover'}`}
+            title="Buscar en el PDF"
+          >
+            <SearchIcon size={18} className="text-text-secondary" />
           </button>
         </div>
       </header>
@@ -637,6 +698,10 @@ export function PdfReader({ filePath, fs, onClose, onProgress }: PdfReaderProps)
           <SearchPanel
             onSearch={handlePdfSearch}
             onNavigate={handlePdfSearchNavigate}
+            hasAbsoluteHeader
+            history={searchHistory}
+            onSearchCompleted={handleSearchCompleted}
+            onClearHistory={handleClearSearchHistory}
           />
         )}
 
@@ -682,6 +747,7 @@ export function PdfReader({ filePath, fs, onClose, onProgress }: PdfReaderProps)
                 currentPage={currentPage}
                 pageLayout={pageLayout}
                 scale={scale}
+
                 totalPages={totalPages}
                 highlights={currentHighlights}
                 onTextSelection={handleTextSelection}
@@ -694,6 +760,8 @@ export function PdfReader({ filePath, fs, onClose, onProgress }: PdfReaderProps)
                 annotations={annotations}
                 textlessPagesRef={textlessPagesRef}
                 selectedAnnotationId={selectedAnnotationId}
+                searchQuery={ui.isPanelOpen('search') ? activeSearchQuery : ''}
+                searchHighlightColor={searchHighlightColor}
                 onAnnotationClick={(annId) => {
                   setSelectedAnnotationId(annId);
                   if (!ui.isPanelOpen('annotations')) ui.togglePanel('annotations');
@@ -734,10 +802,17 @@ export function PdfReader({ filePath, fs, onClose, onProgress }: PdfReaderProps)
                     annotations={annotations}
                     textlessPagesRef={textlessPagesRef}
                     selectedAnnotationId={selectedAnnotationId}
+                    searchQuery={ui.isPanelOpen('search') ? activeSearchQuery : ''}
+                    searchHighlightColor={searchHighlightColor}
                     onAnnotationClick={(annId) => {
                       setSelectedAnnotationId(annId);
                       if (!ui.isPanelOpen('annotations')) ui.togglePanel('annotations');
                     }}
+                    annotateMode={annotateMode}
+                    regionDrag={regionDrag}
+                    setRegionDrag={setRegionDrag}
+                    pendingRegion={pendingRegion}
+                    setPendingRegion={setPendingRegion}
                   />
                 ))}
               </div>
@@ -749,7 +824,7 @@ export function PdfReader({ filePath, fs, onClose, onProgress }: PdfReaderProps)
             <AnnotationPopup
               x={selectionPopup.x}
               y={selectionPopup.y}
-              onHighlight={(color) => addHighlightFromSelection(selectionPopup, color)}
+              onHighlight={(color, categoryId) => addHighlightFromSelection(selectionPopup, color, categoryId)}
               onDismiss={() => { setSelectionPopup(null); window.getSelection()?.removeAllRanges(); }}
             />
           )}
@@ -763,16 +838,28 @@ export function PdfReader({ filePath, fs, onClose, onProgress }: PdfReaderProps)
             >
               <div className="bg-surface border border-border rounded-xl shadow-xl p-4 space-y-3 min-w-[200px]">
                 <p className="text-sm font-medium text-text">Anotar region en pagina {pendingRegion.page}</p>
-                <div className="flex gap-2 justify-center">
-                  {(Object.keys(HIGHLIGHT_COLORS) as HighlightColor[]).map((color) => (
-                    <button
-                      key={color}
-                      onClick={() => addRegionAnnotation(pendingRegion, color)}
-                      className="w-8 h-8 rounded-full border-2 border-border hover:scale-110 transition-transform"
-                      style={{ backgroundColor: HIGHLIGHT_COLORS[color].fill }}
-                      title={HIGHLIGHT_COLORS[color].label}
-                    />
-                  ))}
+                <div className="flex gap-2 justify-center flex-wrap">
+                  {categories.length > 0 ? (
+                    categories.map((cat) => (
+                      <button
+                        key={cat.id}
+                        onClick={() => addRegionAnnotation(pendingRegion, 'yellow', cat.id)}
+                        className="w-8 h-8 rounded-full border-2 border-border hover:scale-110 transition-transform"
+                        style={{ backgroundColor: hexToHighlightFill(cat.color) }}
+                        title={cat.name}
+                      />
+                    ))
+                  ) : (
+                    (Object.keys(HIGHLIGHT_COLORS) as HighlightColor[]).map((color) => (
+                      <button
+                        key={color}
+                        onClick={() => addRegionAnnotation(pendingRegion, color)}
+                        className="w-8 h-8 rounded-full border-2 border-border hover:scale-110 transition-transform"
+                        style={{ backgroundColor: HIGHLIGHT_COLORS[color].fill }}
+                        title={HIGHLIGHT_COLORS[color].label}
+                      />
+                    ))
+                  )}
                 </div>
                 <button
                   onClick={() => setPendingRegion(null)}
@@ -785,7 +872,7 @@ export function PdfReader({ filePath, fs, onClose, onProgress }: PdfReaderProps)
           )}
 
           {/* Annotate mode indicator */}
-          {annotateMode && !pendingRegion && !isScrollMode && (
+          {annotateMode && !pendingRegion && (
             <div className="absolute bottom-20 left-1/2 -translate-x-1/2 z-30 pointer-events-none">
               <div className="bg-primary/80 text-white text-xs px-3 py-1.5 rounded-full shadow">
                 Modo anotar: dibuja un rectangulo

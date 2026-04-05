@@ -180,12 +180,15 @@ describe('SettingsPage', () => {
 
   it('shows "+ Agregar" button', () => {
     renderPage();
-    expect(screen.getByText('+ Agregar')).toBeInTheDocument();
+    const buttons = screen.getAllByText('+ Agregar');
+    expect(buttons.length).toBeGreaterThanOrEqual(1);
+    expect(buttons[0]).toBeInTheDocument();
   });
 
   it('adds a folder when "+ Agregar" is clicked', () => {
     renderPage();
-    fireEvent.click(screen.getByText('+ Agregar'));
+    const buttons = screen.getAllByText('+ Agregar');
+    fireEvent.click(buttons[0]); // First one is the folders button
     // Now there should be input fields for the new folder
     const nameInputs = screen.getAllByPlaceholderText('Nombre');
     expect(nameInputs.length).toBe(1);

@@ -34,6 +34,8 @@ export interface KeyBindings {
   zoomOut?: () => void;
   /** 0 key — reset zoom */
   zoomReset?: () => void;
+  /** F key — fit to width */
+  fitWidth?: () => void;
   /** Home key — first page */
   home?: () => void;
   /** End key — last page */
@@ -112,6 +114,9 @@ export function useReaderKeyboard(
           break;
         case '0':
           bindings.zoomReset?.();
+          break;
+        case 'f':
+          bindings.fitWidth?.();
           break;
         case 'Home':
           bindings.home?.();

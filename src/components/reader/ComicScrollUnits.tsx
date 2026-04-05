@@ -2,8 +2,9 @@
 
 import { useEffect, useState, useRef, useCallback } from 'react';
 import type { ComicPage } from '@/services/comicParser';
-import type { Annotation } from '@/types/annotation';
-import { HIGHLIGHT_COLORS } from '@/types/annotation';
+import type { Annotation, AnnotationCategory } from '@/types/annotation';
+import { resolveAnnotationFill } from '@/types/annotation';
+import { useLibraryStore } from '@/store/libraryStore';
 
 type PageLayout = 'single' | 'dual';
 
@@ -12,6 +13,7 @@ type PageLayout = 'single' | 'dual';
 function renderRegionOverlays(
   annotations: Annotation[],
   pageIdx: number,
+  categories: AnnotationCategory[],
   selectedAnnotationId?: string | null,
   onAnnotationClick?: (annotationId: string) => void,
 ) {
@@ -29,10 +31,10 @@ function renderRegionOverlays(
           top: `${ann.region!.y * 100}%`,
           width: `${ann.region!.w * 100}%`,
           height: `${ann.region!.h * 100}%`,
-          background: HIGHLIGHT_COLORS[ann.style.color].fill,
+          background: resolveAnnotationFill(ann.style, categories),
           border: isSelected
             ? '2px solid rgba(255,255,255,0.9)'
-            : `2px solid ${HIGHLIGHT_COLORS[ann.style.color].fill.replace(/[\d.]+\)$/, '0.8)')}`,
+            : `2px solid ${resolveAnnotationFill(ann.style, categories).replace(/[\d.]+\)$/, '0.8)')}`,
           borderRadius: 2,
           boxShadow: isSelected ? '0 0 8px rgba(255,255,255,0.4)' : 'none',
         }}
@@ -153,6 +155,7 @@ export function ScrollUnitV({
   const ref = useRef<HTMLDivElement>(null);
   const [loaded, setLoaded] = useState(false);
   const [inView, setInView] = useState(false);
+  const categories = useLibraryStore((s) => s.annotationCategories);
 
   useEffect(() => {
     const el = ref.current;
@@ -196,7 +199,7 @@ export function ScrollUnitV({
                   className="select-none"
                   onLoad={() => setLoaded(true)}
                 />
-                {renderRegionOverlays(annotations, pageIdx, selectedAnnotationId, onAnnotationClick)}
+                {renderRegionOverlays(annotations, pageIdx, categories, selectedAnnotationId, onAnnotationClick)}
               </div>
             ))}
           </div>
@@ -210,7 +213,7 @@ export function ScrollUnitV({
               className="select-none"
               onLoad={() => setLoaded(true)}
             />
-            {renderRegionOverlays(annotations, unit[0], selectedAnnotationId, onAnnotationClick)}
+            {renderRegionOverlays(annotations, unit[0], categories, selectedAnnotationId, onAnnotationClick)}
             {onRegionComplete && (
               <RegionDrawLayer
                 pageIdx={unit[0]}
@@ -259,6 +262,7 @@ export function ScrollUnitH({
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const [inView, setInView] = useState(false);
+  const categoriesH = useLibraryStore((s) => s.annotationCategories);
 
   useEffect(() => {
     const el = ref.current;
@@ -304,7 +308,7 @@ export function ScrollUnitH({
                   draggable={false}
                   className="select-none"
                 />
-                {renderRegionOverlays(annotations, pageIdx, selectedAnnotationId, onAnnotationClick)}
+                {renderRegionOverlays(annotations, pageIdx, categoriesH, selectedAnnotationId, onAnnotationClick)}
               </div>
             ))}
           </div>
@@ -317,7 +321,7 @@ export function ScrollUnitH({
               draggable={false}
               className="select-none"
             />
-            {renderRegionOverlays(annotations, unit[0], selectedAnnotationId, onAnnotationClick)}
+            {renderRegionOverlays(annotations, unit[0], categoriesH, selectedAnnotationId, onAnnotationClick)}
             {onRegionComplete && (
               <RegionDrawLayer
                 pageIdx={unit[0]}

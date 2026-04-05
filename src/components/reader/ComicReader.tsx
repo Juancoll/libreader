@@ -9,7 +9,7 @@ import {
   type ComicPage,
 } from '@/services/comicParser';
 import { writeAllReadingData } from '@/services/annotationWriter';
-import { HIGHLIGHT_COLORS } from '@/types/annotation';
+import { HIGHLIGHT_COLORS, hexToHighlightFill, resolveAnnotationFill } from '@/types/annotation';
 import type { HighlightColor } from '@/types/annotation';
 import {
   toBookmarkEntries, toHighlightEntries,
@@ -18,6 +18,7 @@ import { useReaderGestures } from '@/hooks/useReaderGestures';
 import { useReaderUI } from '@/hooks/useReaderUI';
 import { useReaderKeyboard } from '@/hooks/useReaderKeyboard';
 import { useAnnotations } from '@/hooks/useAnnotations';
+import { useLibraryStore } from '@/store/libraryStore';
 import { getStorageKey, loadFromStorage, saveToStorage } from '@/hooks/useReaderStorage';
 import { VoiceCommentsPanel, MicButtonIcon } from './VoiceCommentsPanel';
 import { AnnotationsPanel } from './AnnotationsPanel';
@@ -83,6 +84,7 @@ export function ComicReader({ filePath, format, fs, onClose, onProgress }: Comic
   const [isLoading, setIsLoading] = useState(true);
   const [loadingStatus, setLoadingStatus] = useState('Extrayendo paginas...');
   const [error, setError] = useState<string | null>(null);
+  const categories = useLibraryStore((s) => s.annotationCategories);
 
   // Navigation
   const [currentPage, setCurrentPage] = useState(0);
@@ -350,12 +352,12 @@ export function ComicReader({ filePath, format, fs, onClose, onProgress }: Comic
           zoom: { level: zoom, mode: 'contain' },
         },
         bookmarks: toBookmarkEntries(annotations, totalPages),
-        highlights: toHighlightEntries(annotations),
+        highlights: toHighlightEntries(annotations, categories),
       });
     } catch (err) {
       console.warn('Failed to save reading data to vault:', err);
     }
-  }, [fs, filePath, format, currentPage, totalPages, pageLayout, navMode, direction, zoom, annotations]);
+  }, [fs, filePath, format, currentPage, totalPages, pageLayout, navMode, direction, zoom, annotations, categories]);
 
   const handleClose = useCallback(async () => {
     await saveToVault();
@@ -389,12 +391,13 @@ export function ComicReader({ filePath, format, fs, onClose, onProgress }: Comic
 
   const isBookmarked = bookmarks.some((b) => b.position.index === currentPage + 1);
 
-  const addRegionAnnotation = useCallback((color: HighlightColor) => {
+  const addRegionAnnotation = useCallback((color: HighlightColor, categoryId?: string) => {
     if (!pendingRegion) return;
     ann.addHighlight({
       position: { index: pendingRegion.pageIdx, fraction: totalPages > 0 ? pendingRegion.pageIdx / totalPages : 0 },
       region: { x: pendingRegion.x, y: pendingRegion.y, w: pendingRegion.w, h: pendingRegion.h },
       color,
+      categoryId,
       chapter: `Pagina ${pendingRegion.pageIdx}`,
     });
     setPendingRegion(null);
@@ -623,10 +626,10 @@ export function ComicReader({ filePath, format, fs, onClose, onProgress }: Comic
                 top: `${(ann.region!.y) * 100}%`,
                 width: `${(ann.region!.w) * 100}%`,
                 height: `${(ann.region!.h) * 100}%`,
-                background: HIGHLIGHT_COLORS[ann.style.color].fill,
+                background: resolveAnnotationFill(ann.style, categories),
                 border: isSelected
                   ? '2px solid rgba(255,255,255,0.9)'
-                  : `2px solid ${HIGHLIGHT_COLORS[ann.style.color].fill.replace(/[\d.]+\)$/, '0.8)')}`,
+                  : `2px solid ${resolveAnnotationFill(ann.style, categories).replace(/[\d.]+\)$/, '0.8)')}`,
                 borderRadius: 2,
                 boxShadow: isSelected ? '0 0 8px rgba(255,255,255,0.4)' : 'none',
               }}
@@ -1148,16 +1151,28 @@ export function ComicReader({ filePath, format, fs, onClose, onProgress }: Comic
           onPointerDown={(e) => e.stopPropagation()}
           onPointerUp={(e) => e.stopPropagation()}
         >
-          <span className="text-xs text-white/60 mr-1">Color:</span>
-          {(Object.keys(HIGHLIGHT_COLORS) as HighlightColor[]).map((color) => (
-            <button
-              key={color}
-              onClick={() => addRegionAnnotation(color)}
-              className="w-8 h-8 rounded-full border-2 border-transparent hover:border-white/50 transition-all hover:scale-110"
-              style={{ background: HIGHLIGHT_COLORS[color].fill }}
-              title={HIGHLIGHT_COLORS[color].label}
-            />
-          ))}
+          <span className="text-xs text-white/60 mr-1">{categories.length > 0 ? 'Categoria:' : 'Color:'}</span>
+          {categories.length > 0 ? (
+            categories.map((cat) => (
+              <button
+                key={cat.id}
+                onClick={() => addRegionAnnotation('yellow', cat.id)}
+                className="w-8 h-8 rounded-full border-2 border-transparent hover:border-white/50 transition-all hover:scale-110"
+                style={{ background: hexToHighlightFill(cat.color) }}
+                title={cat.name}
+              />
+            ))
+          ) : (
+            (Object.keys(HIGHLIGHT_COLORS) as HighlightColor[]).map((color) => (
+              <button
+                key={color}
+                onClick={() => addRegionAnnotation(color)}
+                className="w-8 h-8 rounded-full border-2 border-transparent hover:border-white/50 transition-all hover:scale-110"
+                style={{ background: HIGHLIGHT_COLORS[color].fill }}
+                title={HIGHLIGHT_COLORS[color].label}
+              />
+            ))
+          )}
           <button
             onClick={() => { setPendingRegion(null); }}
             className="ml-1 p-1.5 rounded-lg hover:bg-white/10 text-white/50 hover:text-white/80 transition-colors"

@@ -6,13 +6,17 @@ import type { FSAdapter } from '@/services/vaultParser';
 import { HIGHLIGHT_COLORS, isBookmark as isBookmarkAnnotation } from '@/types/annotation';
 import type { Annotation, HighlightColor } from '@/types/annotation';
 import { toBookmarkEntries, toHighlightEntries } from '@/services/annotationService';
-import { writeAllReadingData } from '@/services/annotationWriter';
+import { writeAllReadingData, loadSearchHistory, saveSearchHistoryEntry } from '@/services/annotationWriter';
+import type { SearchHistoryEntry } from '@/services/annotationWriter';
 import { useReaderUI } from '@/hooks/useReaderUI';
 import { useReaderKeyboard } from '@/hooks/useReaderKeyboard';
 import { useAnnotations } from '@/hooks/useAnnotations';
+import { useLibraryStore } from '@/store/libraryStore';
 import { AnnotationPopup } from './AnnotationPopup';
 import { AnnotationsPanel } from './AnnotationsPanel';
 import { VoiceCommentsPanel, MicButtonIcon } from './VoiceCommentsPanel';
+import { SearchPanel } from './SearchPanel';
+import type { SearchResult } from './SearchPanel';
 
 interface MarkdownViewerProps {
   filePath: string;
@@ -39,7 +43,12 @@ export function MarkdownViewer({ filePath, fs, onClose }: MarkdownViewerProps) {
   // Annotations (shared hook)
   const ann = useAnnotations(filePath);
   const { annotations, bookmarks, highlights } = ann;
+  const categories = useLibraryStore((s) => s.annotationCategories);
+  const searchHighlightColor = useLibraryStore((s) => s.searchHighlightColor);
   const [selectionPopup, setSelectionPopup] = useState<MdSelectionInfo | null>(null);
+
+  // Search history (persisted in vault)
+  const [searchHistory, setSearchHistory] = useState<SearchHistoryEntry[]>([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -137,7 +146,7 @@ export function MarkdownViewer({ filePath, fs, onClose }: MarkdownViewerProps) {
   }, [resolveSelectionOffsets]);
 
   // ---- Highlight actions ----
-  const addHighlightFromSelection = useCallback((sel: MdSelectionInfo, color: HighlightColor) => {
+  const addHighlightFromSelection = useCallback((sel: MdSelectionInfo, color: HighlightColor, categoryId?: string) => {
     const totalLen = articleRef.current?.textContent?.length || 1;
     const fraction = sel.startOffset / totalLen;
     ann.addHighlight({
@@ -148,6 +157,7 @@ export function MarkdownViewer({ filePath, fs, onClose }: MarkdownViewerProps) {
         endOffset: sel.endOffset,
       },
       color,
+      categoryId,
       chapter: 'Nota',
     });
     setSelectionPopup(null);
@@ -179,6 +189,127 @@ export function MarkdownViewer({ filePath, fs, onClose }: MarkdownViewerProps) {
       : 0;
     ann.autoCreateForVoice(voiceId, { fraction: scrollFraction }, 'Nota');
   }, [ann]);
+
+  // ---- Markdown text search ----
+  const handleMdSearch = useCallback(async (query: string): Promise<SearchResult[]> => {
+    if (!content) return [];
+    const results: SearchResult[] = [];
+    const lowerQuery = query.toLowerCase();
+    const lowerContent = content.toLowerCase();
+    let searchIdx = 0;
+
+    while (true) {
+      const idx = lowerContent.indexOf(lowerQuery, searchIdx);
+      if (idx === -1) break;
+
+      // Find which line the match is on for location
+      const linesBefore = content.slice(0, idx).split('\n');
+      const lineNum = linesBefore.length;
+
+      // Extract excerpt around the match
+      const start = Math.max(0, idx - 40);
+      const end = Math.min(content.length, idx + query.length + 40);
+      const excerpt = (start > 0 ? '...' : '') + content.slice(start, end).replace(/\n/g, ' ') + (end < content.length ? '...' : '');
+
+      results.push({
+        id: `md-${idx}`,
+        excerpt,
+        location: `Linea ${lineNum}`,
+        navData: idx,
+      });
+      searchIdx = idx + query.length;
+    }
+    return results;
+  }, [content]);
+
+  const handleMdSearchNavigate = useCallback((result: SearchResult) => {
+    const charIdx = result.navData as number;
+    const article = articleRef.current;
+    const container = contentRef.current;
+    if (!article || !container) return;
+
+    // Clear previous search highlights
+    article.querySelectorAll('[data-search-hl]').forEach((el) => {
+      const parent = el.parentNode;
+      if (parent) {
+        while (el.firstChild) parent.insertBefore(el.firstChild, el);
+        parent.removeChild(el);
+      }
+    });
+    article.normalize();
+
+    // Re-apply annotation highlights (they may have been disrupted)
+    // Note: the annotation highlight effect will re-run on next render,
+    // but for immediate visual we don't need to re-apply since search hl
+    // uses a different attribute.
+
+    // Walk text nodes to find the one containing the character offset
+    const walker = document.createTreeWalker(article, NodeFilter.SHOW_TEXT);
+    let charOffset = 0;
+    let node: Text | null;
+    // We need to find the query length from the excerpt.
+    // The search result excerpt contains the query. We can extract query length
+    // from the SearchPanel's active query. For now, use a heuristic: highlight
+    // a reasonable range. Actually, we stored the charIdx = start of match in content.
+    // The result id is `md-${idx}`, so we can recover the start index.
+    // But we don't know the query length here. Let's pass it as part of navData.
+    // For simplicity, let's just highlight the node we scroll to.
+
+    while ((node = walker.nextNode() as Text | null)) {
+      const nodeLen = node.textContent?.length || 0;
+      if (charOffset + nodeLen > charIdx) {
+        // Found the node — highlight it and scroll into view
+        const localOffset = charIdx - charOffset;
+        const parentEl = node.parentElement;
+
+        if (parentEl) {
+          // Create a highlight mark around the text starting at localOffset
+          const text = node.textContent || '';
+          const before = text.slice(0, localOffset);
+          const rest = text.slice(localOffset);
+          const frag = document.createDocumentFragment();
+          if (before) frag.appendChild(document.createTextNode(before));
+
+          const mark = document.createElement('mark');
+          mark.setAttribute('data-search-hl', 'true');
+          mark.style.backgroundColor = searchHighlightColor + '66';
+          mark.style.borderRadius = '2px';
+          mark.style.padding = '0 1px';
+          mark.appendChild(document.createTextNode(rest));
+          frag.appendChild(mark);
+
+          node.parentNode?.replaceChild(frag, node);
+          mark.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+        return;
+      }
+      charOffset += nodeLen;
+    }
+  }, [searchHighlightColor]);
+
+  // Load search history from vault on mount
+  useEffect(() => {
+    loadSearchHistory(fs, filePath).then(setSearchHistory).catch(() => {});
+  }, [fs, filePath]);
+
+  const handleSearchCompleted = useCallback(async (entry: SearchHistoryEntry) => {
+    try {
+      const updated = await saveSearchHistoryEntry(fs, filePath, entry);
+      setSearchHistory(updated);
+    } catch (err) {
+      console.warn('Failed to save search history:', err);
+    }
+  }, [fs, filePath]);
+
+  const handleClearSearchHistory = useCallback(async () => {
+    try {
+      const dir = filePath + '.reading';
+      await fs.writeFile(`${dir}/search-history.json`, '[]');
+      setSearchHistory([]);
+    } catch (err) {
+      console.warn('Failed to clear search history:', err);
+    }
+  }, [fs, filePath]);
 
   // ---- Apply highlights to rendered content ----
   useEffect(() => {
@@ -227,12 +358,12 @@ export function MarkdownViewer({ filePath, fs, onClose }: MarkdownViewerProps) {
           lastRead: new Date().toISOString(),
         },
         bookmarks: toBookmarkEntries(annotations, 1),
-        highlights: toHighlightEntries(annotations),
+        highlights: toHighlightEntries(annotations, categories),
       });
     } catch (err) {
       console.warn('Failed to save MD reading state to vault:', err);
     }
-  }, [fs, filePath, annotations]);
+  }, [fs, filePath, annotations, categories]);
 
   const handleClose = useCallback(async () => {
     await saveToVault();
@@ -318,6 +449,18 @@ export function MarkdownViewer({ filePath, fs, onClose }: MarkdownViewerProps) {
             </svg>
           </button>
 
+          {/* Search panel toggle */}
+          <button
+            onClick={() => ui.togglePanel('search')}
+            className={`p-2 rounded-lg transition-colors ${ui.isPanelOpen('search') ? 'bg-primary/20' : 'hover:bg-surface-hover'}`}
+            title="Buscar en la nota"
+          >
+            <svg className="w-4.5 h-4.5 text-text-secondary" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="11" cy="11" r="8" />
+              <line x1="21" y1="21" x2="16.65" y2="16.65" />
+            </svg>
+          </button>
+
           {/* Voice panel toggle */}
           <button
             onClick={() => ui.togglePanel('voice')}
@@ -377,6 +520,17 @@ export function MarkdownViewer({ filePath, fs, onClose }: MarkdownViewerProps) {
           </aside>
         )}
 
+        {/* Search panel */}
+        {ui.isPanelOpen('search') && (
+          <SearchPanel
+            onSearch={handleMdSearch}
+            onNavigate={handleMdSearchNavigate}
+            history={searchHistory}
+            onSearchCompleted={handleSearchCompleted}
+            onClearHistory={handleClearSearchHistory}
+          />
+        )}
+
         {/* Main content */}
         <div ref={contentRef} className="flex-1 overflow-y-auto p-4 lg:p-8 relative" onMouseUp={handleMouseUp}>
           {isLoading && (
@@ -428,7 +582,7 @@ export function MarkdownViewer({ filePath, fs, onClose }: MarkdownViewerProps) {
             <AnnotationPopup
               x={selectionPopup.x}
               y={selectionPopup.y}
-              onHighlight={(color) => addHighlightFromSelection(selectionPopup, color)}
+              onHighlight={(color, categoryId) => addHighlightFromSelection(selectionPopup, color, categoryId)}
               onDismiss={() => { setSelectionPopup(null); window.getSelection()?.removeAllRanges(); }}
             />
           )}

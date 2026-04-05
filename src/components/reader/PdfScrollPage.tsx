@@ -6,9 +6,10 @@
 import { useRef, useState, useCallback, useEffect } from 'react';
 import type * as pdfjsLib from 'pdfjs-dist';
 import type { Annotation } from '@/types/annotation';
-import { HIGHLIGHT_COLORS } from '@/types/annotation';
-import type { PageLayout, SelectionInfo } from './pdfUtils';
-import { renderPageToCanvas, renderTextLayer, applyHighlightsToTextLayer, resolveSelection } from './pdfUtils';
+import { resolveAnnotationFill } from '@/types/annotation';
+import { useLibraryStore } from '@/store/libraryStore';
+import type { PageLayout, SelectionInfo, RegionDrag, PendingRegion } from './pdfUtils';
+import { renderPageToCanvas, renderTextLayer, applyHighlightsToTextLayer, applySearchHighlightToTextLayer, resolveSelection } from './pdfUtils';
 
 interface PdfScrollPageProps {
   pdfDoc: pdfjsLib.PDFDocumentProxy;
@@ -24,6 +25,13 @@ interface PdfScrollPageProps {
   textlessPagesRef: React.MutableRefObject<Set<number>>;
   selectedAnnotationId?: string | null;
   onAnnotationClick?: (annotationId: string) => void;
+  searchQuery?: string;
+  searchHighlightColor?: string;
+  annotateMode: boolean;
+  regionDrag: RegionDrag | null;
+  setRegionDrag: React.Dispatch<React.SetStateAction<RegionDrag | null>>;
+  pendingRegion: PendingRegion | null;
+  setPendingRegion: React.Dispatch<React.SetStateAction<PendingRegion | null>>;
 }
 
 export function PdfScrollPage({
@@ -40,6 +48,13 @@ export function PdfScrollPage({
   textlessPagesRef,
   selectedAnnotationId,
   onAnnotationClick,
+  searchQuery,
+  searchHighlightColor,
+  annotateMode,
+  regionDrag,
+  setRegionDrag,
+  pendingRegion,
+  setPendingRegion,
 }: PdfScrollPageProps) {
   const ref = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -48,6 +63,7 @@ export function PdfScrollPage({
   const textLayer2Ref = useRef<HTMLDivElement>(null);
   const [inView, setInView] = useState(false);
   const [rendered, setRendered] = useState(false);
+  const categories = useLibraryStore((s) => s.annotationCategories);
 
   const showSecond = pageLayout === 'dual' && pageNum + 1 <= totalPages;
 
@@ -92,7 +108,11 @@ export function PdfScrollPage({
           textlessPagesRef.current.delete(pageNum);
         }
         const pageHl = highlights.filter((h) => h.position.index === pageNum);
-        applyHighlightsToTextLayer(textLayerRef.current!, pageHl);
+        applyHighlightsToTextLayer(textLayerRef.current!, pageHl, categories);
+        // Apply search highlights
+        if (searchQuery) {
+          applySearchHighlightToTextLayer(textLayerRef.current!, searchQuery, searchHighlightColor || '#ff6b00');
+        }
         if (!cancelled) setRendered(true);
       } catch (err) {
         console.warn(`Error rendering PDF page ${pageNum}:`, err);
@@ -111,7 +131,11 @@ export function PdfScrollPage({
             textlessPagesRef.current.delete(pageNum + 1);
           }
           const pageHl = highlights.filter((h) => h.position.index === pageNum + 1);
-          applyHighlightsToTextLayer(textLayer2Ref.current, pageHl);
+          applyHighlightsToTextLayer(textLayer2Ref.current, pageHl, categories);
+          // Apply search highlights
+          if (searchQuery) {
+            applySearchHighlightToTextLayer(textLayer2Ref.current, searchQuery, searchHighlightColor || '#ff6b00');
+          }
         } catch (err) {
           console.warn(`Error rendering PDF page ${pageNum + 1}:`, err);
         }
@@ -120,10 +144,69 @@ export function PdfScrollPage({
 
     render();
     return () => { cancelled = true; };
-  }, [inView, pdfDoc, pageNum, scale, showSecond, highlights, textlessPagesRef]);
+  }, [inView, pdfDoc, pageNum, scale, showSecond, highlights, textlessPagesRef, searchQuery, searchHighlightColor]);
+
+  // Region drag handlers for annotate mode
+  const handleRegionPointerDown = useCallback((e: React.PointerEvent, targetPageNum: number) => {
+    if (!annotateMode || pendingRegion) return;
+    const canvas = targetPageNum === pageNum ? canvasRef.current : canvas2Ref.current;
+    if (!canvas) return;
+
+    const rect = canvas.getBoundingClientRect();
+    const x = (e.clientX - rect.left) / rect.width;
+    const y = (e.clientY - rect.top) / rect.height;
+
+    setRegionDrag({ startX: x, startY: y, curX: x, curY: y, page: targetPageNum });
+    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+    e.preventDefault();
+    e.stopPropagation();
+  }, [annotateMode, pendingRegion, setRegionDrag, pageNum]);
+
+  const handleRegionPointerMove = useCallback((e: React.PointerEvent) => {
+    if (!regionDrag) return;
+    const canvas = regionDrag.page === pageNum ? canvasRef.current : canvas2Ref.current;
+    if (!canvas) return;
+
+    const rect = canvas.getBoundingClientRect();
+    const x = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    const y = Math.max(0, Math.min(1, (e.clientY - rect.top) / rect.height));
+
+    setRegionDrag((prev) => prev ? { ...prev, curX: x, curY: y } : null);
+    e.preventDefault();
+    e.stopPropagation();
+  }, [regionDrag, setRegionDrag, pageNum]);
+
+  const handleRegionPointerUp = useCallback((e: React.PointerEvent) => {
+    if (!regionDrag) return;
+    e.preventDefault();
+    e.stopPropagation();
+
+    const rx = Math.min(regionDrag.startX, regionDrag.curX);
+    const ry = Math.min(regionDrag.startY, regionDrag.curY);
+    const rw = Math.abs(regionDrag.curX - regionDrag.startX);
+    const rh = Math.abs(regionDrag.curY - regionDrag.startY);
+
+    const dragPage = regionDrag.page ?? pageNum;
+    setRegionDrag(null);
+
+    // Minimum size threshold
+    if (rw < 0.02 || rh < 0.02) return;
+
+    setPendingRegion({ x: rx, y: ry, w: rw, h: rh, page: dragPage });
+  }, [regionDrag, pageNum, setRegionDrag, setPendingRegion]);
+
+  // Drag rectangle preview (only show on the page being dragged)
+  const dragRect = regionDrag && (regionDrag.page === pageNum || regionDrag.page === pageNum + 1) ? {
+    left: `${Math.min(regionDrag.startX, regionDrag.curX) * 100}%`,
+    top: `${Math.min(regionDrag.startY, regionDrag.curY) * 100}%`,
+    width: `${Math.abs(regionDrag.curX - regionDrag.startX) * 100}%`,
+    height: `${Math.abs(regionDrag.curY - regionDrag.startY) * 100}%`,
+    page: regionDrag.page,
+  } : null;
 
   // Handle text selection
   const handleMouseUp = useCallback(() => {
+    if (annotateMode) return; // In annotate mode, pointer events are for region drag
     const sel = window.getSelection();
     if (!sel || sel.toString().trim().length < 2) return;
 
@@ -165,10 +248,10 @@ export function PdfScrollPage({
             top: `${ann.region!.y * 100}%`,
             width: `${ann.region!.w * 100}%`,
             height: `${ann.region!.h * 100}%`,
-            backgroundColor: HIGHLIGHT_COLORS[ann.style.color].fill,
+            backgroundColor: resolveAnnotationFill(ann.style, categories),
             border: isSelected
               ? '2px solid rgba(59,130,246,0.9)'
-              : `2px solid ${HIGHLIGHT_COLORS[ann.style.color].fill.replace(/[\d.]+\)$/, '0.8)')}`,
+              : `2px solid ${resolveAnnotationFill(ann.style, categories).replace(/[\d.]+\)$/, '0.8)')}`,
             borderRadius: '2px',
             boxShadow: isSelected ? '0 0 8px rgba(59,130,246,0.4)' : 'none',
           }}
@@ -193,6 +276,23 @@ export function PdfScrollPage({
             <div className="absolute inset-0 pointer-events-none">
               {renderRegionOverlays(pageNum)}
             </div>
+            {/* Annotate mode drag overlay */}
+            {annotateMode && !pendingRegion && (
+              <div
+                className="absolute inset-0 z-10"
+                style={{ cursor: 'crosshair', touchAction: 'none' }}
+                onPointerDown={(e) => handleRegionPointerDown(e, pageNum)}
+                onPointerMove={handleRegionPointerMove}
+                onPointerUp={handleRegionPointerUp}
+              >
+                {dragRect && dragRect.page === pageNum && (
+                  <div
+                    className="absolute border-2 border-primary bg-primary/20 rounded-sm"
+                    style={{ left: dragRect.left, top: dragRect.top, width: dragRect.width, height: dragRect.height }}
+                  />
+                )}
+              </div>
+            )}
           </div>
           {showSecond && (
             <div className="relative shadow-lg" style={{ maxWidth: '50vw' }}>
@@ -201,6 +301,23 @@ export function PdfScrollPage({
               <div className="absolute inset-0 pointer-events-none">
                 {renderRegionOverlays(pageNum + 1)}
               </div>
+              {/* Annotate mode drag overlay for second page */}
+              {annotateMode && !pendingRegion && (
+                <div
+                  className="absolute inset-0 z-10"
+                  style={{ cursor: 'crosshair', touchAction: 'none' }}
+                  onPointerDown={(e) => handleRegionPointerDown(e, pageNum + 1)}
+                  onPointerMove={handleRegionPointerMove}
+                  onPointerUp={handleRegionPointerUp}
+                >
+                  {dragRect && dragRect.page === pageNum + 1 && (
+                    <div
+                      className="absolute border-2 border-primary bg-primary/20 rounded-sm"
+                      style={{ left: dragRect.left, top: dragRect.top, width: dragRect.width, height: dragRect.height }}
+                    />
+                  )}
+                </div>
+              )}
             </div>
           )}
         </div>

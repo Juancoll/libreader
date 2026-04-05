@@ -5,8 +5,8 @@
 
 import * as pdfjsLib from 'pdfjs-dist';
 import { TextLayer } from 'pdfjs-dist';
-import type { Annotation } from '@/types/annotation';
-import { HIGHLIGHT_COLORS } from '@/types/annotation';
+import type { Annotation, AnnotationCategory } from '@/types/annotation';
+import { resolveAnnotationFill } from '@/types/annotation';
 
 // ---- Types ----
 
@@ -34,6 +34,7 @@ export interface RegionDrag {
   startY: number;
   curX: number;
   curY: number;
+  page?: number;
 }
 
 export interface PendingRegion {
@@ -112,6 +113,7 @@ export async function renderTextLayer(
 export function applyHighlightsToTextLayer(
   textLayerDiv: HTMLDivElement,
   highlights: Annotation[],
+  categories: AnnotationCategory[] = [],
 ) {
   if (!textLayerDiv || highlights.length === 0) return;
 
@@ -129,23 +131,95 @@ export function applyHighlightsToTextLayer(
     // Fallback: try all direct spans
     const allSpans = Array.from(textLayerDiv.querySelectorAll('span'));
     if (allSpans.length === 0) return;
-    applyHighlightsToSpans(allSpans, highlights);
+    applyHighlightsToSpans(allSpans, highlights, categories);
     return;
   }
-  applyHighlightsToSpans(spans, highlights);
+  applyHighlightsToSpans(spans, highlights, categories);
 }
 
-function applyHighlightsToSpans(spans: Element[], highlights: Annotation[]) {
+function applyHighlightsToSpans(spans: Element[], highlights: Annotation[], categories: AnnotationCategory[]) {
   for (const hl of highlights) {
     const startIdx = hl.textSelection?.startItemIdx ?? 0;
     const endIdx = hl.textSelection?.endItemIdx ?? 0;
     for (let i = startIdx; i <= endIdx && i < spans.length; i++) {
       const span = spans[i] as HTMLElement;
-      span.style.backgroundColor = HIGHLIGHT_COLORS[hl.style.color].fill;
+      span.style.backgroundColor = resolveAnnotationFill(hl.style, categories);
       span.style.borderRadius = '2px';
       span.setAttribute('data-hl-id', hl.id);
     }
   }
+}
+
+// ---- Search highlight ----
+
+/**
+ * Highlight all occurrences of `query` in the text layer with the given color.
+ * Removes previous search highlights first.
+ */
+export function applySearchHighlightToTextLayer(
+  textLayerDiv: HTMLDivElement,
+  query: string,
+  highlightColor: string,
+) {
+  // Clear previous search highlights
+  clearSearchHighlights(textLayerDiv);
+
+  if (!textLayerDiv || !query || query.length < 2) return;
+
+  const lowerQuery = query.toLowerCase();
+
+  // Get all text spans in the text layer
+  let spans = Array.from(textLayerDiv.querySelectorAll('span[role="presentation"]'));
+  if (spans.length === 0) {
+    spans = Array.from(textLayerDiv.querySelectorAll('span'));
+  }
+  if (spans.length === 0) return;
+
+  // Build the full page text from spans, tracking span boundaries
+  const spanTexts: { span: HTMLElement; text: string; start: number }[] = [];
+  let fullText = '';
+  for (const span of spans) {
+    const text = span.textContent || '';
+    spanTexts.push({ span: span as HTMLElement, text, start: fullText.length });
+    fullText += text + ' '; // spaces between spans (matching handlePdfSearch join)
+  }
+
+  const lowerFull = fullText.toLowerCase();
+  let searchIdx = 0;
+
+  while (true) {
+    const idx = lowerFull.indexOf(lowerQuery, searchIdx);
+    if (idx === -1) break;
+    const matchEnd = idx + query.length;
+
+    // Find which spans overlap with [idx, matchEnd)
+    for (const { span, start, text } of spanTexts) {
+      const spanEnd = start + text.length;
+      if (spanEnd > idx && start < matchEnd) {
+        span.setAttribute('data-search-hl', 'true');
+        span.style.backgroundColor = highlightColor + '66'; // add alpha for semi-transparency
+        span.style.borderRadius = '2px';
+      }
+    }
+
+    searchIdx = idx + query.length;
+  }
+}
+
+/**
+ * Remove all search highlights from a text layer div.
+ */
+export function clearSearchHighlights(textLayerDiv: HTMLDivElement | null) {
+  if (!textLayerDiv) return;
+  textLayerDiv.querySelectorAll('[data-search-hl]').forEach((el) => {
+    const htmlEl = el as HTMLElement;
+    // Only clear if not also an annotation highlight
+    if (!htmlEl.hasAttribute('data-hl-id')) {
+      htmlEl.style.backgroundColor = '';
+      htmlEl.style.borderRadius = '';
+    }
+    htmlEl.removeAttribute('data-search-hl');
+  });
 }
 
 // ---- Selection resolution ----

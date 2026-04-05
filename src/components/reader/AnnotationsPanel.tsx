@@ -5,9 +5,10 @@
  * ComicReader, and future readers.
  */
 
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import type { Annotation } from '@/types/annotation';
-import { HIGHLIGHT_COLORS, isBookmark } from '@/types/annotation';
+import { isBookmark, resolveAnnotationFill, resolveAnnotationCategoryName } from '@/types/annotation';
+import { useLibraryStore } from '@/store/libraryStore';
 import { formatDuration } from '@/hooks/useReaderStorage';
 import type { FSAdapter } from '@/services/vaultParser';
 import {
@@ -69,6 +70,8 @@ export function AnnotationsPanel({
   const bookmarks = annotations.filter(isBookmark);
   const highlights = annotations.filter((a) => !isBookmark(a));
   const selectedRef = useRef<HTMLDivElement>(null);
+  const categories = useLibraryStore((s) => s.annotationCategories);
+  const [categoryFilter, setCategoryFilter] = useState<string>('all');
 
   // Auto-scroll to selected annotation
   useEffect(() => {
@@ -87,19 +90,27 @@ export function AnnotationsPanel({
   });
 
   // Sort highlights by position
-  const sortedHighlights = [...highlights].sort((a, b) => {
-    // By timeStart first (video), then page index, then fraction
-    if (a.position.timeStart != null && b.position.timeStart != null) return a.position.timeStart - b.position.timeStart;
-    if (a.position.index != null && b.position.index != null) {
-      if (a.position.index !== b.position.index) return a.position.index - b.position.index;
-      // Same page: sort by text layer position or region Y
-      const aStart = a.textSelection?.startItemIdx ?? a.region?.y ?? 0;
-      const bStart = b.textSelection?.startItemIdx ?? b.region?.y ?? 0;
-      return aStart - bStart;
-    }
-    if (a.position.fraction != null && b.position.fraction != null) return a.position.fraction - b.position.fraction;
-    return 0;
-  });
+  const sortedHighlights = useMemo(() => {
+    const filtered = categoryFilter === 'all'
+      ? highlights
+      : categoryFilter === 'uncategorized'
+        ? highlights.filter((h) => !h.style.categoryId)
+        : highlights.filter((h) => h.style.categoryId === categoryFilter);
+
+    return [...filtered].sort((a, b) => {
+      // By timeStart first (video), then page index, then fraction
+      if (a.position.timeStart != null && b.position.timeStart != null) return a.position.timeStart - b.position.timeStart;
+      if (a.position.index != null && b.position.index != null) {
+        if (a.position.index !== b.position.index) return a.position.index - b.position.index;
+        // Same page: sort by text layer position or region Y
+        const aStart = a.textSelection?.startItemIdx ?? a.region?.y ?? 0;
+        const bStart = b.textSelection?.startItemIdx ?? b.region?.y ?? 0;
+        return aStart - bStart;
+      }
+      if (a.position.fraction != null && b.position.fraction != null) return a.position.fraction - b.position.fraction;
+      return 0;
+    });
+  }, [highlights, categoryFilter]);
 
   const textStyle = theme?.text ? { color: theme.text } : {};
   const mutedStyle = theme?.muted
@@ -190,8 +201,29 @@ export function AnnotationsPanel({
         {/* Highlights */}
         <div>
           <h3 className="text-sm font-semibold text-text mb-2" style={textStyle}>
-            Resaltados ({sortedHighlights.length})
+            Resaltados ({sortedHighlights.length}{categoryFilter !== 'all' ? ` / ${highlights.length}` : ''})
           </h3>
+          {/* Category filter */}
+          {categories.length > 0 && highlights.length > 0 && (
+            <select
+              value={categoryFilter}
+              onChange={(e) => setCategoryFilter(e.target.value)}
+              className="w-full text-xs mb-2 p-1.5 rounded border border-border bg-surface text-text focus:outline-none focus:ring-1 focus:ring-primary/50"
+              style={{
+                ...(theme?.bg ? { background: theme.bg } : {}),
+                ...textStyle,
+                ...borderStyle,
+              }}
+            >
+              <option value="all">Todas las categorias</option>
+              {categories.map((cat) => (
+                <option key={cat.id} value={cat.id}>
+                  {cat.name}
+                </option>
+              ))}
+              <option value="uncategorized">Sin categoria</option>
+            </select>
+          )}
           {sortedHighlights.length === 0 && (
             <p className="text-xs text-text-muted" style={mutedStyle}>Sin resaltados</p>
           )}
@@ -207,7 +239,7 @@ export function AnnotationsPanel({
               <div className="flex items-start gap-2">
                 <div
                   className="w-3 h-3 rounded-full shrink-0 mt-1"
-                  style={{ background: HIGHLIGHT_COLORS[hl.style.color].fill }}
+                  style={{ background: resolveAnnotationFill(hl.style, categories) }}
                 />
                 <button onClick={() => onNavigate(hl)} className="flex-1 text-left min-w-0">
                   <p className="text-xs line-clamp-3 text-text" style={textStyle}>
@@ -220,6 +252,11 @@ export function AnnotationsPanel({
                   {formatHighlightLocation && (
                     <p className="text-[10px] text-text-muted mt-0.5" style={mutedStyle}>
                       {formatHighlightLocation(hl)}
+                    </p>
+                  )}
+                  {resolveAnnotationCategoryName(hl.style, categories) && (
+                    <p className="text-[10px] text-text-muted mt-0.5 italic" style={mutedStyle}>
+                      {resolveAnnotationCategoryName(hl.style, categories)}
                     </p>
                   )}
                 </button>

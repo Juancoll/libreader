@@ -15,8 +15,9 @@ import type {
   DocumentPosition,
   TextSelection,
   SpatialRegion,
+  AnnotationCategory,
 } from '@/types/annotation';
-import { generateAnnotationId, isBookmark } from '@/types/annotation';
+import { generateAnnotationId, isBookmark, resolveAnnotationCategoryName } from '@/types/annotation';
 import type { BookmarkEntry, HighlightEntry } from './annotationWriter';
 import { loadFromStorage, saveToStorage } from '@/hooks/useReaderStorage';
 
@@ -64,6 +65,7 @@ export function addAnnotation(
     textSelection?: TextSelection;
     region?: SpatialRegion;
     color: HighlightColor;
+    categoryId?: string;
     note?: string;
     chapter?: string;
   },
@@ -74,7 +76,7 @@ export function addAnnotation(
     position: params.position,
     textSelection: params.textSelection,
     region: params.region,
-    style: { color: params.color },
+    style: { color: params.color, categoryId: params.categoryId },
     note: params.note || '',
     voiceIds: [],
     chapter: params.chapter,
@@ -193,8 +195,9 @@ export function toBookmarkEntries(annotations: Annotation[], totalPages: number)
 
 /**
  * Convert unified annotations to HighlightEntry[] for vault persistence.
+ * Accepts optional categories to resolve category names.
  */
-export function toHighlightEntries(annotations: Annotation[]): HighlightEntry[] {
+export function toHighlightEntries(annotations: Annotation[], categories: AnnotationCategory[] = []): HighlightEntry[] {
   return getHighlights(annotations).map((a) => {
     let text = a.textSelection?.text || '';
     if (!text && a.region) {
@@ -211,6 +214,7 @@ export function toHighlightEntries(annotations: Annotation[]): HighlightEntry[] 
       page: a.position.index,
       text,
       color: a.style.color,
+      category: resolveAnnotationCategoryName(a.style, categories),
       note: a.note,
       chapter: a.chapter,
       createdAt: a.createdAt,

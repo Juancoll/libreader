@@ -4,9 +4,10 @@ import type { Book, Rendition, NavItem } from 'epubjs';
 import type { LocationChangedEvent, SpineSection, RenditionWithManager } from '@/types/epubjs';
 import type Contents from 'epubjs/types/contents';
 import type { FSAdapter } from '@/services/vaultParser';
-import { writeAllReadingData } from '@/services/annotationWriter';
-import type { Annotation, HighlightColor } from '@/types/annotation';
-import { HIGHLIGHT_COLORS, isBookmark as isBookmarkAnnotation } from '@/types/annotation';
+import { writeAllReadingData, loadSearchHistory, saveSearchHistoryEntry } from '@/services/annotationWriter';
+import type { SearchHistoryEntry } from '@/services/annotationWriter';
+import type { Annotation, HighlightColor, AnnotationCategory } from '@/types/annotation';
+import { HIGHLIGHT_COLORS, hexToHighlightFill, isBookmark as isBookmarkAnnotation } from '@/types/annotation';
 import {
   loadAnnotations, getHighlights,
   toBookmarkEntries, toHighlightEntries,
@@ -16,6 +17,7 @@ import { useReaderUI } from '@/hooks/useReaderUI';
 import { useReaderKeyboard } from '@/hooks/useReaderKeyboard';
 import { useReaderGestures } from '@/hooks/useReaderGestures';
 import { useAnnotations } from '@/hooks/useAnnotations';
+import { useLibraryStore } from '@/store/libraryStore';
 import { CloseIcon, BookmarkIcon, ChevronIcon, SearchIcon, AnnotationsBubbleIcon } from './ReaderIcons';
 import { VoiceCommentsPanel, MicButtonIcon } from './VoiceCommentsPanel';
 import { AnnotationPopup } from './AnnotationPopup';
@@ -85,6 +87,7 @@ export function EpubReader({ filePath, fs, onClose, onProgress }: EpubReaderProp
   const renditionRef = useRef<Rendition | null>(null);
   const handleCloseRef = useRef<() => void>(() => {});
   const navFlashTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const categories = useLibraryStore((s) => s.annotationCategories);
 
   // Reading state
   const [isLoading, setIsLoading] = useState(true);
@@ -148,6 +151,11 @@ export function EpubReader({ filePath, fs, onClose, onProgress }: EpubReaderProp
   const ann = useAnnotations(filePath);
   const { annotations, bookmarks } = ann;
   const [selectionPopup, setSelectionPopup] = useState<{ cfi: string; text: string; x: number; y: number } | null>(null);
+
+  // Search history (persisted in vault)
+  const [searchHistory, setSearchHistory] = useState<SearchHistoryEntry[]>([]);
+  const searchHighlightCfiRef = useRef<string | null>(null);
+  const searchHighlightColor = useLibraryStore((s) => s.searchHighlightColor);
 
   // Persist settings
   useEffect(() => {
@@ -290,7 +298,7 @@ export function EpubReader({ filePath, fs, onClose, onProgress }: EpubReaderProp
         }
 
         // Restore saved highlights
-        restoreHighlights(rendition, getHighlights(loadAnnotations(filePath)));
+        restoreHighlights(rendition, getHighlights(loadAnnotations(filePath)), categories);
 
         setIsLoading(false);
         setRenditionReady(true);
@@ -452,18 +460,21 @@ export function EpubReader({ filePath, fs, onClose, onProgress }: EpubReaderProp
   );
 
   // ---- Highlight actions ----
-  const addHighlightFromSelection = useCallback((cfi: string, text: string, color: HighlightColor) => {
+  const addHighlightFromSelection = useCallback((cfi: string, text: string, color: HighlightColor, categoryId?: string) => {
     ann.addHighlight({
       position: { cfi },
       textSelection: { text, cfiRange: cfi },
       color,
+      categoryId,
       chapter,
     });
     // Add to rendition
     const r = renditionRef.current;
     if (r) {
-      r.annotations.highlight(cfi, {}, () => {}, `hl-${color}`, {
-        fill: HIGHLIGHT_COLORS[color].fill,
+      const cat = categoryId ? categories.find((c) => c.id === categoryId) : undefined;
+      const fill = cat ? hexToHighlightFill(cat.color) : HIGHLIGHT_COLORS[color].fill;
+      r.annotations.highlight(cfi, {}, () => {}, `hl-${categoryId || color}`, {
+        fill,
         'fill-opacity': '1',
         'mix-blend-mode': 'multiply',
       });
@@ -474,7 +485,7 @@ export function EpubReader({ filePath, fs, onClose, onProgress }: EpubReaderProp
       const doc = (r as RenditionWithManager)?.manager?.container?.querySelector('iframe')?.contentDocument;
       doc?.getSelection()?.removeAllRanges();
     } catch { /* ok */ }
-  }, [ann, chapter]);
+  }, [ann, chapter, categories]);
 
   const removeHighlightAction = useCallback((annotationId: string) => {
     const removed = ann.removeHighlight(annotationId);
@@ -536,8 +547,49 @@ export function EpubReader({ filePath, fs, onClose, onProgress }: EpubReaderProp
   }, []);
 
   const handleEpubSearchNavigate = useCallback((result: SearchResult) => {
-    renditionRef.current?.display(result.navData as string);
-  }, []);
+    const r = renditionRef.current;
+    if (!r) return;
+    // Remove previous search highlight
+    if (searchHighlightCfiRef.current) {
+      try { r.annotations.remove(searchHighlightCfiRef.current, 'highlight'); } catch { /* ok */ }
+      searchHighlightCfiRef.current = null;
+    }
+    const cfi = result.navData as string;
+    r.display(cfi);
+    // Add search highlight at the result CFI
+    try {
+      r.annotations.highlight(cfi, {}, () => {}, 'hl-search', {
+        fill: searchHighlightColor,
+        'fill-opacity': '0.4',
+        'mix-blend-mode': 'multiply',
+      });
+      searchHighlightCfiRef.current = cfi;
+    } catch { /* CFI may be invalid */ }
+  }, [searchHighlightColor]);
+
+  // Load search history from vault on mount
+  useEffect(() => {
+    loadSearchHistory(fs, filePath).then(setSearchHistory).catch(() => {});
+  }, [fs, filePath]);
+
+  const handleSearchCompleted = useCallback(async (entry: SearchHistoryEntry) => {
+    try {
+      const updated = await saveSearchHistoryEntry(fs, filePath, entry);
+      setSearchHistory(updated);
+    } catch (err) {
+      console.warn('Failed to save search history:', err);
+    }
+  }, [fs, filePath]);
+
+  const handleClearSearchHistory = useCallback(async () => {
+    try {
+      const dir = filePath + '.reading';
+      await fs.writeFile(`${dir}/search-history.json`, '[]');
+      setSearchHistory([]);
+    } catch (err) {
+      console.warn('Failed to clear search history:', err);
+    }
+  }, [fs, filePath]);
 
   // ---- Save to vault on close ----
   const saveToVault = useCallback(async () => {
@@ -560,12 +612,12 @@ export function EpubReader({ filePath, fs, onClose, onProgress }: EpubReaderProp
           readingDirection: 'ltr',
         },
         bookmarks: toBookmarkEntries(annotations, totalPages),
-        highlights: toHighlightEntries(annotations),
+        highlights: toHighlightEntries(annotations, categories),
       });
     } catch (err) {
       console.warn('Failed to save reading data to vault:', err);
     }
-  }, [fs, filePath, progress, currentCfi, viewMode, annotations]);
+  }, [fs, filePath, progress, currentCfi, viewMode, annotations, categories]);
 
   const handleClose = useCallback(async () => {
     await saveToVault();
@@ -808,6 +860,10 @@ export function EpubReader({ filePath, fs, onClose, onProgress }: EpubReaderProp
           <SearchPanel
             onSearch={handleEpubSearch}
             onNavigate={handleEpubSearchNavigate}
+            hasAbsoluteHeader
+            history={searchHistory}
+            onSearchCompleted={handleSearchCompleted}
+            onClearHistory={handleClearSearchHistory}
             theme={{
               bg: themeColors.bg,
               text: themeColors.text,
@@ -853,7 +909,7 @@ export function EpubReader({ filePath, fs, onClose, onProgress }: EpubReaderProp
             <AnnotationPopup
               x={selectionPopup.x}
               y={selectionPopup.y}
-              onHighlight={(color) => addHighlightFromSelection(selectionPopup.cfi, selectionPopup.text, color)}
+              onHighlight={(color, categoryId) => addHighlightFromSelection(selectionPopup.cfi, selectionPopup.text, color, categoryId)}
               onDismiss={() => setSelectionPopup(null)}
               theme={{
                 bg: readerTheme === 'dark' ? '#2a2a2e' : '#fff',
@@ -990,13 +1046,15 @@ function registerHighlightStyles(rendition: Rendition) {
   rendition.themes.default(rules);
 }
 
-function restoreHighlights(rendition: Rendition, highlights: Annotation[]) {
+function restoreHighlights(rendition: Rendition, highlights: Annotation[], categories: AnnotationCategory[]) {
   for (const hl of highlights) {
     const cfi = hl.textSelection?.cfiRange;
     if (!cfi) continue;
     try {
-      rendition.annotations.highlight(cfi, {}, () => {}, `hl-${hl.style.color}`, {
-        fill: HIGHLIGHT_COLORS[hl.style.color].fill,
+      const cat = hl.style.categoryId ? categories.find((c) => c.id === hl.style.categoryId) : undefined;
+      const fill = cat ? hexToHighlightFill(cat.color) : HIGHLIGHT_COLORS[hl.style.color].fill;
+      rendition.annotations.highlight(cfi, {}, () => {}, `hl-${hl.style.categoryId || hl.style.color}`, {
+        fill,
         'fill-opacity': '1',
         'mix-blend-mode': 'multiply',
       });

@@ -58,6 +58,7 @@ export interface UseAnnotationsReturn {
     textSelection?: TextSelection;
     region?: SpatialRegion;
     color: HighlightColor;
+    categoryId?: string;
     chapter?: string;
     note?: string;
   }) => Annotation;
@@ -141,6 +142,7 @@ export function useAnnotations(filePath: string): UseAnnotationsReturn {
     textSelection?: TextSelection;
     region?: SpatialRegion;
     color: HighlightColor;
+    categoryId?: string;
     chapter?: string;
     note?: string;
   }): Annotation => {

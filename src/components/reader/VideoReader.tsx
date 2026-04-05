@@ -15,7 +15,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import type { FSAdapter } from '@/services/vaultParser';
 import type { Annotation, HighlightColor } from '@/types/annotation';
-import { HIGHLIGHT_COLORS } from '@/types/annotation';
+import { HIGHLIGHT_COLORS, hexToHighlightFill, resolveAnnotationFill } from '@/types/annotation';
 import {
   toBookmarkEntries, toHighlightEntries,
 } from '@/services/annotationService';
@@ -23,6 +23,7 @@ import { writeAllReadingData } from '@/services/annotationWriter';
 import { useReaderUI } from '@/hooks/useReaderUI';
 import { useReaderKeyboard } from '@/hooks/useReaderKeyboard';
 import { useAnnotations } from '@/hooks/useAnnotations';
+import { useLibraryStore } from '@/store/libraryStore';
 import { AnnotationsPanel } from './AnnotationsPanel';
 import { VoiceCommentsPanel } from './VoiceCommentsPanel';
 
@@ -124,6 +125,7 @@ export function VideoReader({ filePath, fs, onClose }: VideoReaderProps) {
   const [duration, setDuration] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const ui = useReaderUI();
+  const categories = useLibraryStore((s) => s.annotationCategories);
 
   // Annotations (shared hook)
   const ann = useAnnotations(filePath);
@@ -298,13 +300,14 @@ export function VideoReader({ filePath, fs, onClose }: VideoReaderProps) {
     }
   }, [annotatePhase, currentTime]);
 
-  const handlePickColor = useCallback((color: HighlightColor) => {
+  const handlePickColor = useCallback((color: HighlightColor, categoryId?: string) => {
     const start = Math.min(annotateStart, annotateEnd);
     const end = Math.max(annotateStart, annotateEnd);
     const fraction = duration > 0 ? start / duration : 0;
     ann.addHighlight({
       position: { timeStart: start, timeEnd: end, fraction },
       color,
+      categoryId,
       chapter: `${formatTime(start)} - ${formatTime(end)}`,
     });
     setAnnotatePhase('idle');
@@ -358,13 +361,13 @@ export function VideoReader({ filePath, fs, onClose }: VideoReaderProps) {
           duration: d,
         },
         bookmarks: toBookmarkEntries(annotations, Math.floor(d)),
-        highlights: toHighlightEntries(annotations),
+        highlights: toHighlightEntries(annotations, categories),
       });
     } catch { /* best effort */ }
 
     savePosition(filePath, t);
     onClose();
-  }, [currentTime, duration, annotations, filePath, fs, onClose]);
+  }, [currentTime, duration, annotations, categories, filePath, fs, onClose]);
 
   // ---- Keyboard shortcuts ----
   useReaderKeyboard({
@@ -473,7 +476,7 @@ export function VideoReader({ filePath, fs, onClose }: VideoReaderProps) {
                   key={ann.id}
                   className="px-3 py-1.5 rounded-lg text-sm font-medium text-white/90"
                   style={{
-                    background: HIGHLIGHT_COLORS[ann.style.color].fill.replace(/[\d.]+\)$/, '0.7)'),
+                    background: resolveAnnotationFill(ann.style, categories).replace(/[\d.]+\)$/, '0.7)'),
                     backdropFilter: 'blur(4px)',
                   }}
                 >
@@ -506,15 +509,27 @@ export function VideoReader({ filePath, fs, onClose }: VideoReaderProps) {
               className="absolute z-30 flex items-center gap-1 p-2 rounded-lg shadow-lg bg-black/90 border border-white/20"
               style={{ left: colorPickerPos.x - 100, top: colorPickerPos.y - 25 }}
             >
-              {(Object.keys(HIGHLIGHT_COLORS) as HighlightColor[]).map((color) => (
-                <button
-                  key={color}
-                  onClick={() => handlePickColor(color)}
-                  className="w-8 h-8 rounded-full border-2 border-transparent hover:border-white/50 transition-all hover:scale-110"
-                  style={{ background: HIGHLIGHT_COLORS[color].fill }}
-                  title={HIGHLIGHT_COLORS[color].label}
-                />
-              ))}
+              {categories.length > 0 ? (
+                categories.map((cat) => (
+                  <button
+                    key={cat.id}
+                    onClick={() => handlePickColor('yellow', cat.id)}
+                    className="w-8 h-8 rounded-full border-2 border-transparent hover:border-white/50 transition-all hover:scale-110"
+                    style={{ background: hexToHighlightFill(cat.color) }}
+                    title={cat.name}
+                  />
+                ))
+              ) : (
+                (Object.keys(HIGHLIGHT_COLORS) as HighlightColor[]).map((color) => (
+                  <button
+                    key={color}
+                    onClick={() => handlePickColor(color)}
+                    className="w-8 h-8 rounded-full border-2 border-transparent hover:border-white/50 transition-all hover:scale-110"
+                    style={{ background: HIGHLIGHT_COLORS[color].fill }}
+                    title={HIGHLIGHT_COLORS[color].label}
+                  />
+                ))
+              )}
               <button onClick={cancelAnnotation} className="ml-1 p-1 text-white/50 hover:text-white">
                 <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <line x1="18" y1="6" x2="6" y2="18" />
@@ -583,7 +598,7 @@ export function VideoReader({ filePath, fs, onClose }: VideoReaderProps) {
                   const left = (hl.position.timeStart / duration) * 100;
                   const width = ((hl.position.timeEnd - hl.position.timeStart) / duration) * 100;
                   return (
-                    <div key={hl.id} className="absolute top-0 bottom-0 rounded-full opacity-60" style={{ left: `${left}%`, width: `${Math.max(width, 0.5)}%`, background: HIGHLIGHT_COLORS[hl.style.color].fill }} title={hl.chapter || ''} />
+                    <div key={hl.id} className="absolute top-0 bottom-0 rounded-full opacity-60" style={{ left: `${left}%`, width: `${Math.max(width, 0.5)}%`, background: resolveAnnotationFill(hl.style, categories) }} title={hl.chapter || ''} />
                   );
                 })}
                 {/* Bookmark dots */}
