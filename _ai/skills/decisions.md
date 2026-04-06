@@ -140,3 +140,19 @@ Key decisions and their rationale, so future AI agents (and humans) understand w
 **Decision:** All commands use `bun run`, `bunx`, never `npm`/`npx`/`node`.
 
 **Why:** User's project is configured for Bun. It's faster and the lockfile is `bun.lock`.
+
+---
+
+## PDF Fit-to-Width/Height Are One-Shot Actions
+
+**Decision:** `applyFit('width')` and `applyFit('height')` compute the correct scale and call `setScale()` once. No persistent `fitMode` state, no highlighted/selected state on buttons.
+
+**Why:** User explicitly said "al final es una simple accion de zoom en el momento, no un estado". An earlier attempt with `fitMode` as persistent state caused visual glitches: page not repainting, losing white background, ResizeObserver loops in scroll mode. The one-shot approach is simpler and glitch-free.
+
+---
+
+## PDF Region Annotations Work in Both Paged and Scroll
+
+**Decision:** Annotate mode (region drag) works in both paged and scroll view modes.
+
+**Why:** There was no technical reason to restrict it. Each `PdfScrollPage` gets its own crosshair overlay and drag handlers. The `RegionDrag` type has an optional `page` field to track which page the drag started on (needed in scroll where multiple pages are visible).

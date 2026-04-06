@@ -1,6 +1,6 @@
 # LibReader — Project Status
 
-Last updated: 2026-04-03
+Last updated: 2026-04-06
 
 ## What's Done
 
@@ -45,17 +45,19 @@ Last updated: 2026-04-03
   - Voice comments panel
   - Reading state + annotations saved to vault
   - Extracted: `comicUtils.ts`, `ComicScrollUnits.tsx`, `ComicIcons.tsx` (reader-specific only)
-- [x] **PdfReader** (~1609 lines) — pdfjs-dist with web worker
+- [x] **PdfReader** (~956 lines) — pdfjs-dist with web worker
   - Paged, vertical scroll modes
   - Single/dual page layouts
   - Render scale (0.5-3.0) + CSS zoom (pinch only, no double-tap zoom)
+  - **Toolbar with icon buttons** organized in 3 groups (Visualization | Annotations | Search)
+  - **Fit-to-width / Fit-to-height** one-shot zoom actions (not persistent state)
   - Tap zone navigation (horizontal bands, handled by pointer event handler)
   - Nav flash feedback (animated chevrons)
   - UI toggle
   - Text layer (pdfjs TextLayer) for native text selection
   - Highlight system (5 colors, span-index-based)
   - Bookmark system (page-based, toggle via B key or toolbar)
-  - **Annotate mode**: region fallback for text-less PDF pages (toggle via toolbar or `A` key)
+  - **Annotate mode**: region selection on both paged and scroll views (toggle via toolbar or `A` key)
   - **Region annotations**: colored overlays on both paged and scroll views
   - **Text-less page detection**: `renderTextLayer()` returns boolean, `textlessPagesRef` tracks pages without text
   - Annotations panel (sidebar, bookmarks + highlights + regions with delete + inline note editing)
@@ -155,7 +157,6 @@ Last updated: 2026-04-03
 ## Known Issues
 
 - `textlessPagesRef` in PdfReader is write-only — populated but not yet read. Ready for auto-activate annotate mode feature.
-- Region annotations only work in single-page paged mode (both Comic and PDF). Acceptable limitation.
 - No double-tap zoom in PDF or EPUB (removed by user request). Pinch-to-zoom still works.
 
 ## What's Next
