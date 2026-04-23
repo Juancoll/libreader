@@ -1,5 +1,6 @@
 import { useCallback, useState } from 'react';
 import { useLibraryStore } from '@/store/libraryStore';
+import type { AIProviderConfig, AIProviderType } from '@/store/libraryStore';
 import { useFileSystem } from '@/hooks/useFileSystem';
 import { useVaultLoader } from '@/hooks/useVaultLoader';
 import { clearVaultCache } from '@/services/vaultCache';
@@ -13,6 +14,8 @@ export function SettingsPage() {
   const setTheme = useLibraryStore((s) => s.setTheme);
   const searchHighlightColor = useLibraryStore((s) => s.searchHighlightColor);
   const setSearchHighlightColor = useLibraryStore((s) => s.setSearchHighlightColor);
+  const aiProvider = useLibraryStore((s) => s.aiProvider);
+  const setAIProvider = useLibraryStore((s) => s.setAIProvider);
   const items = useLibraryStore((s) => s.items);
   const setItems = useLibraryStore((s) => s.setItems);
   const annotationCategories = useLibraryStore((s) => s.annotationCategories);
@@ -234,6 +237,7 @@ export function SettingsPage() {
               ['light', 'Claro'],
               ['dark', 'Oscuro'],
               ['system', 'Sistema'],
+              ['eink', 'E-Ink'],
             ] as const
           ).map(([value, label]) => (
             <button
@@ -409,6 +413,9 @@ export function SettingsPage() {
         </div>
       </section>
 
+      {/* AI Provider */}
+      <AIProviderSection provider={aiProvider} onChange={setAIProvider} />
+
       {/* About */}
       <section className="space-y-2 text-sm text-text-muted">
         <h3 className="text-sm font-semibold text-text uppercase tracking-wider">
@@ -422,5 +429,157 @@ export function SettingsPage() {
         </p>
       </section>
     </div>
+  );
+}
+
+// ---- AI Provider Settings ----
+
+const PROVIDERS: { type: AIProviderType; label: string; defaultModel: string; needsKey: boolean; defaultUrl?: string }[] = [
+  { type: 'github', label: 'GitHub Models', defaultModel: 'gpt-4o-mini', needsKey: true },
+  { type: 'openai', label: 'OpenAI', defaultModel: 'gpt-4o-mini', needsKey: true },
+  { type: 'anthropic', label: 'Anthropic', defaultModel: 'claude-sonnet-4-20250514', needsKey: true },
+  { type: 'ollama', label: 'Ollama (local)', defaultModel: 'llama3.2', needsKey: false, defaultUrl: 'http://localhost:11434' },
+];
+
+function AIProviderSection({ provider, onChange }: { provider: AIProviderConfig | null; onChange: (p: AIProviderConfig | null) => void }) {
+  const [showKey, setShowKey] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<'ok' | 'error' | null>(null);
+
+  const selectedType = provider?.type || null;
+
+  const selectProvider = (type: AIProviderType) => {
+    const def = PROVIDERS.find((p) => p.type === type)!;
+    onChange({
+      type,
+      apiKey: provider?.type === type ? provider.apiKey : '',
+      model: provider?.type === type ? provider.model : def.defaultModel,
+      baseUrl: provider?.type === type ? provider.baseUrl : def.defaultUrl,
+    });
+    setTestResult(null);
+  };
+
+  const updateProvider = (updates: Partial<AIProviderConfig>) => {
+    if (!provider) return;
+    onChange({ ...provider, ...updates });
+    setTestResult(null);
+  };
+
+  const testConnection = async () => {
+    if (!provider) return;
+    setTesting(true);
+    setTestResult(null);
+    try {
+      const { testAIProvider } = await import('@/services/aiService');
+      const ok = await testAIProvider(provider);
+      setTestResult(ok ? 'ok' : 'error');
+    } catch {
+      setTestResult('error');
+    }
+    setTesting(false);
+  };
+
+  const def = selectedType ? PROVIDERS.find((p) => p.type === selectedType) : null;
+
+  return (
+    <section className="space-y-4">
+      <h3 className="text-sm font-semibold text-text uppercase tracking-wider">
+        Inteligencia Artificial
+      </h3>
+      <p className="text-xs text-text-muted">
+        Configura un proveedor de IA para enriquecer importaciones: completar metadatos, sugerir tags, buscar portadas y generar resumenes.
+      </p>
+
+      {/* Provider buttons */}
+      <div className="grid grid-cols-2 gap-2">
+        {PROVIDERS.map((p) => (
+          <button
+            key={p.type}
+            onClick={() => selectProvider(p.type)}
+            className={`px-3 py-2.5 rounded-lg text-sm font-medium transition-colors text-left ${
+              selectedType === p.type
+                ? 'bg-primary text-white'
+                : 'bg-surface-alt text-text-secondary hover:bg-surface-hover'
+            }`}
+          >
+            {p.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Config form */}
+      {provider && def && (
+        <div className="p-4 rounded-lg border border-border bg-surface space-y-3">
+          {def.needsKey && (
+            <div>
+              <label className="block text-xs font-medium text-text-secondary mb-1">API Key</label>
+              <div className="flex gap-2">
+                <input
+                  type={showKey ? 'text' : 'password'}
+                  value={provider.apiKey}
+                  onChange={(e) => updateProvider({ apiKey: e.target.value })}
+                  placeholder={`${def.label} API key`}
+                  className="flex-1 px-3 py-2 rounded-lg border border-border bg-background text-sm text-text font-mono focus:outline-none focus:border-primary"
+                />
+                <button
+                  onClick={() => setShowKey(!showKey)}
+                  className="px-3 py-2 rounded-lg border border-border text-xs text-text-secondary hover:bg-surface-hover"
+                >
+                  {showKey ? 'Ocultar' : 'Ver'}
+                </button>
+              </div>
+            </div>
+          )}
+
+          <div>
+            <label className="block text-xs font-medium text-text-secondary mb-1">Modelo</label>
+            <input
+              type="text"
+              value={provider.model}
+              onChange={(e) => updateProvider({ model: e.target.value })}
+              placeholder={def.defaultModel}
+              className="w-full px-3 py-2 rounded-lg border border-border bg-background text-sm text-text font-mono focus:outline-none focus:border-primary"
+            />
+          </div>
+
+          {(provider.type === 'ollama' || provider.baseUrl) && (
+            <div>
+              <label className="block text-xs font-medium text-text-secondary mb-1">URL base</label>
+              <input
+                type="text"
+                value={provider.baseUrl || ''}
+                onChange={(e) => updateProvider({ baseUrl: e.target.value || undefined })}
+                placeholder={def.defaultUrl || 'https://...'}
+                className="w-full px-3 py-2 rounded-lg border border-border bg-background text-sm text-text font-mono focus:outline-none focus:border-primary"
+              />
+            </div>
+          )}
+
+          <div className="flex gap-2 items-center pt-1">
+            <button
+              onClick={testConnection}
+              disabled={testing || (def.needsKey && !provider.apiKey)}
+              className="px-4 py-2 text-sm font-medium rounded-lg bg-primary text-white hover:bg-primary-hover transition-colors disabled:opacity-50"
+            >
+              {testing ? 'Probando...' : 'Probar conexion'}
+            </button>
+            <button
+              onClick={() => { onChange(null); setTestResult(null); }}
+              className="px-4 py-2 text-sm rounded-lg border border-border text-text-secondary hover:bg-surface-hover transition-colors"
+            >
+              Desactivar IA
+            </button>
+            {testResult === 'ok' && <span className="text-sm text-green-500 font-medium">Conectado</span>}
+            {testResult === 'error' && <span className="text-sm text-red-500 font-medium">Error de conexion</span>}
+          </div>
+        </div>
+      )}
+
+      {!provider && (
+        <p className="text-sm text-text-muted py-2">
+          Selecciona un proveedor para habilitar las funciones de IA.
+        </p>
+      )}
+    </section>
   );
 }

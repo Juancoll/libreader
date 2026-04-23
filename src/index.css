@@ -33,6 +33,71 @@
   --color-secondary-light: #2e1065;
 }
 
+/* E-Ink mode: pure B&W, no animations, no shadows, high contrast.
+ * Optimized for e-ink displays (Boox, Kindle, etc.) */
+.eink {
+  --color-primary: #000000;
+  --color-primary-hover: #000000;
+  --color-primary-light: #e0e0e0;
+  --color-surface: #ffffff;
+  --color-surface-alt: #f5f5f5;
+  --color-surface-hover: #e8e8e8;
+  --color-border: #000000;
+  --color-text: #000000;
+  --color-text-secondary: #333333;
+  --color-text-muted: #666666;
+  --color-secondary: #000000;
+  --color-secondary-light: #e0e0e0;
+  --color-accent: #000000;
+  --color-success: #000000;
+  --color-danger: #000000;
+}
+
+/* E-Ink: kill decorative animations and transitions (not functional transforms) */
+.eink *,
+.eink *::before,
+.eink *::after {
+  animation-duration: 0s !important;
+  animation-delay: 0s !important;
+  transition-duration: 0s !important;
+  transition-delay: 0s !important;
+}
+
+/* E-Ink: remove decorative shadows for crisp rendering */
+.eink * {
+  box-shadow: none !important;
+  text-shadow: none !important;
+}
+
+/* E-Ink: larger minimum font size for readability */
+.eink body {
+  font-size: 18px;
+  -webkit-font-smoothing: none;
+  -moz-osx-font-smoothing: unset;
+}
+
+/* E-Ink: larger tap targets for touch */
+.eink button,
+.eink [role="button"],
+.eink a {
+  min-height: 44px;
+  min-width: 44px;
+}
+
+/* E-Ink: thicker borders for visibility */
+.eink [class*="border"] {
+  border-width: 2px;
+}
+
+/* E-Ink: scrollbar visibility */
+.eink ::-webkit-scrollbar {
+  width: 10px;
+}
+
+.eink ::-webkit-scrollbar-thumb {
+  background-color: #000000;
+}
+
 html, body, #root {
   height: 100%;
   margin: 0;

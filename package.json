@@ -13,17 +13,17 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "test:e2e": "playwright test",
-    "cap:init:android": "cap add android",
-    "cap:init:ios": "cap add ios",
-    "cap:sync": "cap sync",
-    "cap:android": "cap open android",
-    "cap:ios": "cap open ios"
+    "proxy": "bun run scripts/proxy.ts",
+    "tauri:dev": "cargo tauri dev",
+    "tauri:build": "cargo tauri build",
+    "tauri:android:init": "cargo tauri android init",
+    "tauri:android:build": "cargo tauri android build"
   },
   "dependencies": {
-    "@capacitor/android": "^8.3.0",
-    "@capacitor/app": "^8.1.0",
-    "@capacitor/core": "^8.3.0",
-    "@capacitor/filesystem": "^8.1.2",
+    "@tauri-apps/api": "^2.10.1",
+    "@tauri-apps/plugin-fs": "^2.5.0",
+    "@tauri-apps/plugin-http": "^2.5.8",
+    "@tauri-apps/plugin-process": "^2.3.1",
     "epubjs": "^0.3.93",
     "fflate": "^0.8.2",
     "libarchive.js": "^2.0.2",
@@ -39,7 +39,6 @@
     "zustand": "^5.0.12"
   },
   "devDependencies": {
-    "@capacitor/cli": "^8.3.0",
     "@eslint/js": "^9.39.4",
     "@playwright/test": "^1.58.2",
     "@tailwindcss/vite": "^4.2.2",

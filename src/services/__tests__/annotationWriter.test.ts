@@ -33,6 +33,7 @@ function createMockFS(): FSAdapter & {
     writeFile: vi.fn().mockImplementation(async (path: string, content: string) => {
       writtenFiles.set(path, content);
     }),
+    writeBinaryFile: vi.fn(),
     mkdir: vi.fn().mockImplementation(async (path: string) => {
       createdDirs.add(path);
     }),

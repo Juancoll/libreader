@@ -5,6 +5,7 @@ import { LibraryPage } from '@/pages/LibraryPage';
 import { BookDetailPage } from '@/pages/BookDetailPage';
 import { FolderPage } from '@/pages/FolderPage';
 import { SettingsPage } from '@/pages/SettingsPage';
+import { ImportPage } from '@/pages/ImportPage';
 import { useLibraryStore } from '@/store/libraryStore';
 import { useBackButton } from '@/hooks/useBackButton';
 
@@ -15,6 +16,14 @@ function ThemeProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const root = document.documentElement;
+
+    // Clear all theme classes first
+    root.classList.remove('dark', 'eink');
+
+    if (theme === 'eink') {
+      root.classList.add('eink');
+      return;
+    }
 
     if (theme === 'system') {
       const mq = window.matchMedia('(prefers-color-scheme: dark)');
@@ -43,8 +52,8 @@ function AppBackButton() {
 
   const handleBack = useCallback(() => {
     if (location.pathname === '/') {
-      // At root — minimize the app instead of exiting
-      import('@capacitor/app').then(({ App }) => App.minimizeApp());
+      // At root — minimize the app (Tauri) or do nothing (web)
+      import('@tauri-apps/plugin-process').then(({ exit }) => exit(0)).catch(() => {});
     } else {
       navigate(-1);
     }
@@ -66,6 +75,7 @@ export default function App() {
             <Route path="/item/:id" element={<BookDetailPage />} />
             <Route path="/folder/:slug" element={<FolderPage />} />
             <Route path="/stats" element={<Suspense fallback={<div className="flex-1 flex items-center justify-center"><div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" /></div>}><StatsPage /></Suspense>} />
+            <Route path="/import" element={<ImportPage />} />
             <Route path="/settings" element={<SettingsPage />} />
           </Routes>
         </Layout>

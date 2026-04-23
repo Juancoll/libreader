@@ -6,26 +6,29 @@
 src/
 ├── App.tsx                    # Root: ThemeProvider + BrowserRouter + Routes + Layout
 ├── main.tsx                   # React 19 createRoot mount
-├── index.css                  # Tailwind v4 theme tokens (CSS custom properties, light/dark)
+├── index.css                  # Tailwind v4 theme tokens (light/dark/eink CSS custom properties)
 ├── assets/
 │   └── hero.png               # Welcome screen illustration
 ├── types/
 │   ├── index.ts               # All TS types: LibraryItem, VaultFolder, FileFormat, etc.
 │   └── annotation.ts          # Unified annotation types: Annotation, DocumentPosition, etc. (~128 lines)
 ├── store/
-│   ├── libraryStore.ts        # Zustand store with persist middleware
+│   ├── libraryStore.ts        # Zustand store with persist middleware (includes AIProviderConfig)
 │   └── __tests__/
 │       └── libraryStore.test.ts   # 16 tests
 ├── services/
 │   ├── vaultParser.ts         # FSAdapter interface, WebFSAdapter, IndexedDB, vault parsing
 │   ├── comicParser.ts         # CBZ (fflate) + CBR (libarchive.js) extraction
+│   ├── importService.ts       # Import wizard: metadata extraction, .md generation (includes summary)
+│   ├── aiService.ts           # Multi-provider LLM abstraction (~230 lines, code-split)
 │   ├── annotationService.ts   # Annotation CRUD, queries, linking, legacy migration (~355 lines)
 │   ├── annotationWriter.ts    # Write reading state/bookmarks/annotations to vault (~226 lines)
 │   ├── voiceRecorder.ts       # MediaRecorder voice comments, save/load in vault
-│   ├── capacitorFS.ts         # CapacitorFSAdapter for native iOS/Android
+│   ├── tauriFS.ts             # TauriFSAdapter for native desktop/mobile via Tauri (~195 lines)
 │   └── __tests__/             # 136 tests across 5 files
 ├── hooks/
-│   ├── useFileSystem.ts       # Singleton WebFSAdapter, auto-restore from IndexedDB
+│   ├── useFileSystem.ts       # Platform detection (isTauriNative), adapter switching (Web/Tauri)
+│   ├── useBackButton.ts       # Escape keydown handler (Tauri process exit on root)
 │   ├── useVaultLoader.ts      # Auto-loads vault when FS ready
 │   ├── useFilteredItems.ts    # Memoized filter + sort + folder scoping
 │   ├── useCoverUrl.ts         # Vault paths → blob URLs, CBZ cover extraction
@@ -35,10 +38,12 @@ src/
 │   ├── LibraryPage.tsx        # Main library grid/list, welcome screen when no vault
 │   ├── BookDetailPage.tsx     # Item detail + lazy reader launch
 │   ├── FolderPage.tsx         # Folder-specific item view
-│   └── SettingsPage.tsx       # Vault, folders, theme config
+│   ├── ImportPage.tsx         # Import wizard with AI enrichment buttons
+│   ├── StatsPage.tsx          # Reading statistics
+│   └── SettingsPage.tsx       # Vault, folders, theme, AI provider config
 ├── components/
 │   ├── layout/
-│   │   └── Layout.tsx         # Sidebar + mobile header + nav links
+│   │   └── Layout.tsx         # Sidebar + mobile header + nav links + theme toggle (4 themes)
 │   ├── library/
 │   │   ├── BookCard.tsx       # Grid/list card with cover
 │   │   ├── FilterBar.tsx      # Search, sort, filter chips
@@ -51,7 +56,7 @@ src/
 │       ├── PdfReader.tsx      # PDF reader (~1609 lines)
 │       ├── EpubReader.tsx     # EPUB reader (~1167 lines)
 │       ├── MarkdownViewer.tsx # Markdown reader with annotations (~502 lines)
-│       ├── VideoReader.tsx  # YouTube video player with annotations (~726 lines)
+│       ├── VideoReader.tsx    # YouTube video player with annotations (~726 lines)
 │       ├── AnnotationPopup.tsx # Shared floating color picker (~78 lines)
 │       ├── AnnotationsPanel.tsx # Shared sidebar: bookmarks + highlights + note editing (~352 lines)
 │       ├── VoiceCommentsPanel.tsx  # Shared voice recording UI (~525 lines)
@@ -60,6 +65,22 @@ src/
 │           └── VoiceCommentsPanel.test.tsx  # 14 tests
 └── test/
     └── setup.ts               # Vitest setup: jest-dom + localStorage mock
+
+src-tauri/                     # Tauri v2 backend
+├── Cargo.toml                 # Rust deps: tauri + plugins (fs, http, process, log)
+├── src/
+│   ├── lib.rs                 # Plugin registration
+│   └── main.rs                # Entry point
+├── tauri.conf.json            # App config (identifier: com.libreader.app)
+├── capabilities/
+│   └── default.json           # FS/HTTP/process permissions
+└── gen/
+    └── android/               # Generated Android project
+
+scripts/
+├── check.sh                   # Runs typecheck + tests + build
+├── dev.sh                     # Starts dev server
+└── proxy.ts                   # CORS proxy for AI APIs (Bun server on :3001)
 ```
 
 ## Routing
@@ -69,7 +90,9 @@ src/
 | `/`              | `LibraryPage`    | Library grid/list or welcome screen  |
 | `/item/:id`      | `BookDetailPage` | Item detail + reader launch          |
 | `/folder/:slug`  | `FolderPage`     | Folder-scoped item view              |
-| `/settings`      | `SettingsPage`   | Vault, folders, theme                |
+| `/import`        | `ImportPage`     | Import wizard with AI enrichment     |
+| `/stats`         | `StatsPage`      | Reading statistics                   |
+| `/settings`      | `SettingsPage`   | Vault, folders, theme, AI config     |
 
 Wrapped in: `ThemeProvider > BrowserRouter > Layout > Routes`
 
@@ -79,11 +102,12 @@ Wrapped in: `ThemeProvider > BrowserRouter > Layout > Routes`
 
 **Persisted** (localStorage key `libreader-storage`):
 - `vaultConfig` — vault path + folder definitions
-- `theme` — `'light' | 'dark' | 'system'`
+- `theme` — `'light' | 'dark' | 'eink' | 'system'`
 - `viewMode` — `'grid' | 'list'`
 - `sort` — `{ field, direction }`
 - `progress` — `Record<id, ReadingProgress>`
 - `annotations` — `Record<id, Annotation[]>`
+- `aiProvider` — `AIProviderConfig` (provider, apiKey, model, baseUrl)
 
 **Ephemeral** (re-parsed each session):
 - `items` — `LibraryItem[]`
@@ -121,6 +145,15 @@ const VideoReader = lazy(() => import('@/components/reader/VideoReader')...);
 
 Heavy dependencies only download when the user opens that format.
 
+## AI Service (Code Splitting)
+
+`aiService.ts` is dynamically imported in `ImportPage.tsx` (~5KB chunk). Provides:
+- `enrichMetadata(metadata, config)` — fills missing fields from LLM
+- `suggestTags(metadata, config)` — returns hierarchical `#`-prefixed tags
+- `generateSummary(metadata, config)` — returns Spanish summary paragraph
+
+Uses Tauri HTTP plugin on native (bypasses CORS), fetch on web (via proxy or direct).
+
 ## Data Persistence Layers
 
 | Key Pattern | Storage | Data |
@@ -157,7 +190,19 @@ ItemFolder/
 | `libarchive.js` | CBR extraction (WASM, dynamic import only) |
 | `yaml` | Frontmatter parsing (browser-safe, replaces gray-matter) |
 | `react-markdown` + `remark-gfm` | .md note rendering |
-| `@capacitor/core` + `@capacitor/filesystem` | Native filesystem |
+| `@tauri-apps/api` | Tauri core JS API |
+| `@tauri-apps/plugin-fs` | Native filesystem access |
+| `@tauri-apps/plugin-http` | Native HTTP (CORS-free) |
+| `@tauri-apps/plugin-process` | App exit/restart |
+| `@tauri-apps/plugin-log` | Logging |
+
+## Tauri Config
+
+- **Identifier:** `com.libreader.app`
+- **Frontend dist:** `../dist` (Vite output)
+- **Plugins:** fs, http, process, log
+- **Capabilities:** FS read/write, HTTP fetch, process exit
+- **Targets:** Web (dev server), Linux (DEB/RPM), Android (APK/AAB), future iOS
 
 ## Vite Config
 
@@ -168,7 +213,7 @@ ItemFolder/
 
 ## Tests
 
-263 unit tests across 10 files (Vitest), 15 E2E tests (Playwright).
+429 unit tests across 20 files (Vitest), 15 E2E tests (Playwright).
 
 ```bash
 bunx vitest run          # Unit tests

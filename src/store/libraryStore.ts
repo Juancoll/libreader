@@ -9,6 +9,15 @@ import type {
 } from '@/types';
 import type { AnnotationCategory } from '@/types/annotation';
 
+export type AIProviderType = 'openai' | 'anthropic' | 'github' | 'ollama';
+
+export interface AIProviderConfig {
+  type: AIProviderType;
+  apiKey: string;
+  model: string;
+  baseUrl?: string; // Custom endpoint (Ollama, Azure, etc.)
+}
+
 interface LibraryState {
   // Data
   items: LibraryItem[];
@@ -22,13 +31,16 @@ interface LibraryState {
 
   // Config
   vaultConfig: VaultConfig;
-  theme: 'light' | 'dark' | 'system';
+  theme: 'light' | 'dark' | 'system' | 'eink';
 
   // Annotation categories
   annotationCategories: AnnotationCategory[];
 
   // Search highlight color (hex)
   searchHighlightColor: string;
+
+  // AI config
+  aiProvider: AIProviderConfig | null;
 
   // Actions
   setItems: (items: LibraryItem[]) => void;
@@ -39,8 +51,9 @@ interface LibraryState {
   setLoading: (loading: boolean) => void;
   setError: (error: string | null) => void;
   setVaultConfig: (config: Partial<VaultConfig>) => void;
-  setTheme: (theme: 'light' | 'dark' | 'system') => void;
+  setTheme: (theme: 'light' | 'dark' | 'system' | 'eink') => void;
   setSearchHighlightColor: (color: string) => void;
+  setAIProvider: (provider: AIProviderConfig | null) => void;
 
   // Category CRUD
   addCategory: (category: AnnotationCategory) => void;
@@ -85,6 +98,9 @@ export const useLibraryStore = create<LibraryState>()(
       // Search highlight color — bright orange by default
       searchHighlightColor: '#ff6b00',
 
+      // AI
+      aiProvider: null,
+
       // Actions
       setItems: (items) => set({ items }),
       setFilter: (filter) =>
@@ -100,6 +116,7 @@ export const useLibraryStore = create<LibraryState>()(
         })),
       setTheme: (theme) => set({ theme }),
       setSearchHighlightColor: (color) => set({ searchHighlightColor: color }),
+      setAIProvider: (provider) => set({ aiProvider: provider }),
 
       // Category CRUD
       addCategory: (category) =>
@@ -128,6 +145,7 @@ export const useLibraryStore = create<LibraryState>()(
         sort: state.sort,
         annotationCategories: state.annotationCategories,
         searchHighlightColor: state.searchHighlightColor,
+        aiProvider: state.aiProvider,
       }),
     }
   )

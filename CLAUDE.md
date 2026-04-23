@@ -39,7 +39,7 @@ After any change, run (or use `scripts/check.sh`):
 
 ```bash
 bunx tsc --noEmit        # Must pass with zero new errors
-bunx vitest run           # 191+ tests must pass
+bunx vitest run           # 429+ tests must pass
 bun run build             # Production build must succeed
 ```
 
@@ -55,7 +55,8 @@ Pre-existing type errors in `vaultParser.ts` and `comicParser.ts` are known and 
 Multiplatform ebook reader application that reads from an Obsidian vault.
 
 - Reads books (EPUB, PDF), comics (CBZ, CBR), and author metadata from a local vault
-- Web-first, then mobile/desktop via Capacitor
+- Web + Linux desktop + Android via **Tauri v2**
+- AI-assisted import wizard (metadata enrichment, tag suggestions, summaries)
 - UI language: Spanish
 
 ## Stack
@@ -68,11 +69,12 @@ Multiplatform ebook reader application that reads from an Obsidian vault.
 | CSS           | Tailwind CSS v4                   |
 | State         | Zustand (with persist middleware) |
 | Routing       | React Router                      |
-| Native        | Capacitor                         |
+| Native        | **Tauri v2** (web, Linux, Android, future iOS) |
 | PDF           | pdfjs-dist                        |
 | EPUB          | epubjs                            |
 | CBZ           | fflate (synchronous unzipSync)    |
 | CBR           | libarchive.js@2.0.2 (WASM, dynamic import only) |
+| AI            | Multi-provider LLM (OpenAI, Anthropic, GitHub Models, Ollama) |
 | Tests         | Vitest (unit), Playwright (e2e)   |
 
 ## Commands
@@ -80,9 +82,14 @@ Multiplatform ebook reader application that reads from an Obsidian vault.
 ```bash
 bun run dev --host      # Dev server on port 5173
 bun run build           # Production build (tsc -b && vite build)
-bunx vitest run         # Unit tests (191 tests, 9 files)
-bunx playwright test    # E2E tests
+bun run proxy           # CORS proxy for AI APIs (localhost:3001)
+bunx vitest run         # Unit tests (429 tests, 20 files)
+bunx playwright test    # E2E tests (15 tests)
 bunx tsc --noEmit       # Type check only
+bun run tauri:dev       # Tauri desktop dev
+bun run tauri:build     # Tauri desktop build (DEB, RPM)
+bun run tauri:android-dev   # Tauri Android dev
+bun run tauri:android-build # Tauri Android build (APK, AAB)
 ```
 
 ## Vault Location & Rules
@@ -116,6 +123,7 @@ Item Name/
 2. Cover/photo filename = same base name as the `.md` file
 3. Comic naming convention: `Series - T## - Title`
 4. Authors referenced as wikilinks: `"[[Author Name]]"`
+5. Tags use `#` prefix with hierarchical `/`: e.g. `"#informatica/ia"`
 
 ### VaultFolder interface
 
@@ -136,6 +144,13 @@ Nothing else. No hardcoded categories. Generic/minimal design. Content type is d
 - Two files served from `public/`: `libarchive-worker.js` and `libarchive.wasm`
 - `gray-matter` replaced with custom `parseFrontmatter()` using `yaml` npm package
 
+## AI CORS Strategy
+
+- **Tauri native**: Uses `@tauri-apps/plugin-http` (no CORS restrictions)
+- **Web dev**: CORS proxy at `localhost:3001` (`bun run proxy`)
+- **Anthropic**: Uses `anthropic-dangerous-direct-browser-access` header (works without proxy)
+- **Ollama**: Always localhost, no CORS issues
+
 
 ---
 
@@ -147,26 +162,29 @@ Nothing else. No hardcoded categories. Generic/minimal design. Content type is d
 src/
 ├── App.tsx                    # Root: ThemeProvider + BrowserRouter + Routes + Layout
 ├── main.tsx                   # React 19 createRoot mount
-├── index.css                  # Tailwind v4 theme tokens (CSS custom properties, light/dark)
+├── index.css                  # Tailwind v4 theme tokens (light/dark/eink CSS custom properties)
 ├── assets/
 │   └── hero.png               # Welcome screen illustration
 ├── types/
 │   ├── index.ts               # All TS types: LibraryItem, VaultFolder, FileFormat, etc.
 │   └── annotation.ts          # Unified annotation types: Annotation, DocumentPosition, etc. (~128 lines)
 ├── store/
-│   ├── libraryStore.ts        # Zustand store with persist middleware
+│   ├── libraryStore.ts        # Zustand store with persist middleware (includes AIProviderConfig)
 │   └── __tests__/
 │       └── libraryStore.test.ts   # 16 tests
 ├── services/
 │   ├── vaultParser.ts         # FSAdapter interface, WebFSAdapter, IndexedDB, vault parsing
 │   ├── comicParser.ts         # CBZ (fflate) + CBR (libarchive.js) extraction
+│   ├── importService.ts       # Import wizard: metadata extraction, .md generation (includes summary)
+│   ├── aiService.ts           # Multi-provider LLM abstraction (~230 lines, code-split)
 │   ├── annotationService.ts   # Annotation CRUD, queries, linking, legacy migration (~355 lines)
 │   ├── annotationWriter.ts    # Write reading state/bookmarks/annotations to vault (~226 lines)
 │   ├── voiceRecorder.ts       # MediaRecorder voice comments, save/load in vault
-│   ├── capacitorFS.ts         # CapacitorFSAdapter for native iOS/Android
+│   ├── tauriFS.ts             # TauriFSAdapter for native desktop/mobile via Tauri (~195 lines)
 │   └── __tests__/             # 136 tests across 5 files
 ├── hooks/
-│   ├── useFileSystem.ts       # Singleton WebFSAdapter, auto-restore from IndexedDB
+│   ├── useFileSystem.ts       # Platform detection (isTauriNative), adapter switching (Web/Tauri)
+│   ├── useBackButton.ts       # Escape keydown handler (Tauri process exit on root)
 │   ├── useVaultLoader.ts      # Auto-loads vault when FS ready
 │   ├── useFilteredItems.ts    # Memoized filter + sort + folder scoping
 │   ├── useCoverUrl.ts         # Vault paths → blob URLs, CBZ cover extraction
@@ -176,10 +194,12 @@ src/
 │   ├── LibraryPage.tsx        # Main library grid/list, welcome screen when no vault
 │   ├── BookDetailPage.tsx     # Item detail + lazy reader launch
 │   ├── FolderPage.tsx         # Folder-specific item view
-│   └── SettingsPage.tsx       # Vault, folders, theme config
+│   ├── ImportPage.tsx         # Import wizard with AI enrichment buttons
+│   ├── StatsPage.tsx          # Reading statistics
+│   └── SettingsPage.tsx       # Vault, folders, theme, AI provider config
 ├── components/
 │   ├── layout/
-│   │   └── Layout.tsx         # Sidebar + mobile header + nav links
+│   │   └── Layout.tsx         # Sidebar + mobile header + nav links + theme toggle (4 themes)
 │   ├── library/
 │   │   ├── BookCard.tsx       # Grid/list card with cover
 │   │   ├── FilterBar.tsx      # Search, sort, filter chips
@@ -192,7 +212,7 @@ src/
 │       ├── PdfReader.tsx      # PDF reader (~1609 lines)
 │       ├── EpubReader.tsx     # EPUB reader (~1167 lines)
 │       ├── MarkdownViewer.tsx # Markdown reader with annotations (~502 lines)
-│       ├── VideoReader.tsx  # YouTube video player with annotations (~726 lines)
+│       ├── VideoReader.tsx    # YouTube video player with annotations (~726 lines)
 │       ├── AnnotationPopup.tsx # Shared floating color picker (~78 lines)
 │       ├── AnnotationsPanel.tsx # Shared sidebar: bookmarks + highlights + note editing (~352 lines)
 │       ├── VoiceCommentsPanel.tsx  # Shared voice recording UI (~525 lines)
@@ -201,6 +221,22 @@ src/
 │           └── VoiceCommentsPanel.test.tsx  # 14 tests
 └── test/
     └── setup.ts               # Vitest setup: jest-dom + localStorage mock
+
+src-tauri/                     # Tauri v2 backend
+├── Cargo.toml                 # Rust deps: tauri + plugins (fs, http, process, log)
+├── src/
+│   ├── lib.rs                 # Plugin registration
+│   └── main.rs                # Entry point
+├── tauri.conf.json            # App config (identifier: com.libreader.app)
+├── capabilities/
+│   └── default.json           # FS/HTTP/process permissions
+└── gen/
+    └── android/               # Generated Android project
+
+scripts/
+├── check.sh                   # Runs typecheck + tests + build
+├── dev.sh                     # Starts dev server
+└── proxy.ts                   # CORS proxy for AI APIs (Bun server on :3001)
 ```
 
 ## Routing
@@ -210,7 +246,9 @@ src/
 | `/`              | `LibraryPage`    | Library grid/list or welcome screen  |
 | `/item/:id`      | `BookDetailPage` | Item detail + reader launch          |
 | `/folder/:slug`  | `FolderPage`     | Folder-scoped item view              |
-| `/settings`      | `SettingsPage`   | Vault, folders, theme                |
+| `/import`        | `ImportPage`     | Import wizard with AI enrichment     |
+| `/stats`         | `StatsPage`      | Reading statistics                   |
+| `/settings`      | `SettingsPage`   | Vault, folders, theme, AI config     |
 
 Wrapped in: `ThemeProvider > BrowserRouter > Layout > Routes`
 
@@ -220,11 +258,12 @@ Wrapped in: `ThemeProvider > BrowserRouter > Layout > Routes`
 
 **Persisted** (localStorage key `libreader-storage`):
 - `vaultConfig` — vault path + folder definitions
-- `theme` — `'light' | 'dark' | 'system'`
+- `theme` — `'light' | 'dark' | 'eink' | 'system'`
 - `viewMode` — `'grid' | 'list'`
 - `sort` — `{ field, direction }`
 - `progress` — `Record<id, ReadingProgress>`
 - `annotations` — `Record<id, Annotation[]>`
+- `aiProvider` — `AIProviderConfig` (provider, apiKey, model, baseUrl)
 
 **Ephemeral** (re-parsed each session):
 - `items` — `LibraryItem[]`
@@ -262,6 +301,15 @@ const VideoReader = lazy(() => import('@/components/reader/VideoReader')...);
 
 Heavy dependencies only download when the user opens that format.
 
+## AI Service (Code Splitting)
+
+`aiService.ts` is dynamically imported in `ImportPage.tsx` (~5KB chunk). Provides:
+- `enrichMetadata(metadata, config)` — fills missing fields from LLM
+- `suggestTags(metadata, config)` — returns hierarchical `#`-prefixed tags
+- `generateSummary(metadata, config)` — returns Spanish summary paragraph
+
+Uses Tauri HTTP plugin on native (bypasses CORS), fetch on web (via proxy or direct).
+
 ## Data Persistence Layers
 
 | Key Pattern | Storage | Data |
@@ -298,7 +346,19 @@ ItemFolder/
 | `libarchive.js` | CBR extraction (WASM, dynamic import only) |
 | `yaml` | Frontmatter parsing (browser-safe, replaces gray-matter) |
 | `react-markdown` + `remark-gfm` | .md note rendering |
-| `@capacitor/core` + `@capacitor/filesystem` | Native filesystem |
+| `@tauri-apps/api` | Tauri core JS API |
+| `@tauri-apps/plugin-fs` | Native filesystem access |
+| `@tauri-apps/plugin-http` | Native HTTP (CORS-free) |
+| `@tauri-apps/plugin-process` | App exit/restart |
+| `@tauri-apps/plugin-log` | Logging |
+
+## Tauri Config
+
+- **Identifier:** `com.libreader.app`
+- **Frontend dist:** `../dist` (Vite output)
+- **Plugins:** fs, http, process, log
+- **Capabilities:** FS read/write, HTTP fetch, process exit
+- **Targets:** Web (dev server), Linux (DEB/RPM), Android (APK/AAB), future iOS
 
 ## Vite Config
 
@@ -309,7 +369,7 @@ ItemFolder/
 
 ## Tests
 
-263 unit tests across 10 files (Vitest), 15 E2E tests (Playwright).
+429 unit tests across 20 files (Vitest), 15 E2E tests (Playwright).
 
 ```bash
 bunx vitest run          # Unit tests
@@ -477,6 +537,41 @@ Key decisions and their rationale, so future AI agents (and humans) understand w
 **Decision:** Annotate mode (region drag) works in both paged and scroll view modes.
 
 **Why:** There was no technical reason to restrict it. Each `PdfScrollPage` gets its own crosshair overlay and drag handlers. The `RegionDrag` type has an optional `page` field to track which page the drag started on (needed in scroll where multiple pages are visible).
+
+---
+
+## Tauri v2 Replaces Capacitor
+
+**Decision:** Migrated from Capacitor to Tauri v2 for all native platforms (Linux desktop, Android, future iOS).
+
+**Why:** Tauri provides a single framework for web, desktop, and mobile instead of Capacitor's mobile-only focus. Benefits: smaller binary sizes (~7MB DEB vs Electron's ~150MB), Rust backend for performance, unified plugin system (fs, http, process). Capacitor was fully removed — all `@capacitor/*` deps, `android/` project, `capacitor.config.json`, and `capacitorFS.ts` deleted.
+
+---
+
+## AI CORS Strategy: Tauri HTTP + Dev Proxy
+
+**Decision:** Three-tier approach for AI API calls:
+1. **Tauri native**: `@tauri-apps/plugin-http` bypasses CORS entirely
+2. **Web dev**: Bun proxy on `localhost:3001` forwards to LLM APIs
+3. **Anthropic exception**: `anthropic-dangerous-direct-browser-access` header works without proxy
+
+**Why:** Browser CORS blocks direct calls to OpenAI/GitHub/Ollama APIs. Tauri's native HTTP client has no CORS. For web development, a lightweight proxy is simpler than configuring each provider. Anthropic uniquely supports a browser opt-in header.
+
+---
+
+## AI Service Code-Split
+
+**Decision:** `aiService.ts` is dynamically imported only in `ImportPage.tsx`, producing a ~5KB separate chunk.
+
+**Why:** AI functionality is only used during import. Loading LLM client code on every page would waste bandwidth. Dynamic import keeps the main bundle lean.
+
+---
+
+## E-Ink Theme Is Visual-Only
+
+**Decision:** The `.eink` CSS class applies B&W colors, removes animations/shadows/transitions, but does NOT disable gestures, zoom, or transforms.
+
+**Why:** Target device is Boox Air 5C, which has a BSR processor that handles touch gestures and partial refresh natively. Disabling functional transforms would break the reading experience. Only decorative visual effects need removal for e-ink clarity.
 
 
 ---

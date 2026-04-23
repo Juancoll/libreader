@@ -2,7 +2,7 @@
  * Vault Parser Service
  * Reads and parses the Obsidian vault structure for LibReader.
  * Uses the File System Access API for web, can be swapped for
- * Capacitor Filesystem on mobile/desktop.
+ * Tauri Filesystem on mobile/desktop.
  */
 
 import { parse as parseYaml } from 'yaml';
@@ -76,6 +76,7 @@ export interface FSAdapter {
   readFile(path: string): Promise<string>;
   readBinaryFile(path: string): Promise<ArrayBuffer>;
   writeFile(path: string, content: string): Promise<void>;
+  writeBinaryFile(path: string, data: ArrayBuffer): Promise<void>;
   mkdir(path: string): Promise<void>;
   exists(path: string): Promise<boolean>;
   getFileUrl(path: string): Promise<string>;
@@ -307,6 +308,25 @@ export class WebFSAdapter implements FSAdapter {
     await writable.close();
 
     // Invalidate handle cache for this path
+    this.handleCache.delete(path);
+  }
+
+  async writeBinaryFile(path: string, data: ArrayBuffer): Promise<void> {
+    if (!this.root) throw new Error('No filesystem access');
+    const parts = path.split('/').filter(Boolean);
+    const fileName = parts.pop();
+    if (!fileName) throw new Error('Invalid path');
+
+    let current: FileSystemDirectoryHandle = this.root;
+    for (const part of parts) {
+      current = await current.getDirectoryHandle(part, { create: true });
+    }
+
+    const fileHandle = await current.getFileHandle(fileName, { create: true });
+    const writable = await (fileHandle as any).createWritable();
+    await writable.write(data);
+    await writable.close();
+
     this.handleCache.delete(path);
   }
 

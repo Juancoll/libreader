@@ -48,7 +48,7 @@ export interface KeyBindings {
  * Provides the standard guard (skip INPUT/TEXTAREA/contentEditable)
  * and dispatches to the reader's key bindings.
  *
- * On Capacitor native, also listens for the Android hardware back button
+ * On Tauri native, also listens for the Android hardware back button
  * and maps it to the escape binding (cascadeClose).
  *
  * @param bindings Key action map from the reader

@@ -35,6 +35,7 @@ function createMockFS(): FSAdapter {
     readBinaryFile: vi.fn().mockResolvedValue(new ArrayBuffer(0)),
     readDir: vi.fn().mockResolvedValue([]),
     writeFile: vi.fn().mockResolvedValue(undefined),
+    writeBinaryFile: vi.fn(),
     mkdir: vi.fn().mockResolvedValue(undefined),
     exists: vi.fn().mockResolvedValue(false),
     getFileUrl: vi.fn().mockResolvedValue(''),

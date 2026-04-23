@@ -37,7 +37,7 @@ After any change, run (or use `scripts/check.sh`):
 
 ```bash
 bunx tsc --noEmit        # Must pass with zero new errors
-bunx vitest run           # 191+ tests must pass
+bunx vitest run           # 429+ tests must pass
 bun run build             # Production build must succeed
 ```
 

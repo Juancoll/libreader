@@ -13,7 +13,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
   useVaultLoader();
 
   const toggleTheme = () => {
-    const next = theme === 'light' ? 'dark' : theme === 'dark' ? 'system' : 'light';
+    const next = theme === 'light' ? 'dark' : theme === 'dark' ? 'eink' : theme === 'eink' ? 'system' : 'light';
     setTheme(next);
   };
 
@@ -101,6 +101,22 @@ export function Layout({ children }: { children: React.ReactNode }) {
             Estadisticas
           </NavLink>
 
+          {/* Fixed: Import */}
+          <NavLink
+            to="/import"
+            onClick={() => setSidebarOpen(false)}
+            className={({ isActive }) =>
+              `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+                isActive
+                  ? 'bg-primary text-white'
+                  : 'text-text-secondary hover:bg-surface-hover hover:text-text'
+              }`
+            }
+          >
+            <ImportNavIcon className="w-5 h-5" />
+            Importar
+          </NavLink>
+
           {/* Fixed: Settings */}
           <NavLink
             to="/settings"
@@ -125,7 +141,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
             className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-text-secondary hover:bg-surface-hover hover:text-text w-full transition-colors"
           >
             <ThemeIcon className="w-5 h-5" />
-            {theme === 'light' ? 'Claro' : theme === 'dark' ? 'Oscuro' : 'Sistema'}
+            {theme === 'light' ? 'Claro' : theme === 'dark' ? 'Oscuro' : theme === 'eink' ? 'E-Ink' : 'Sistema'}
           </button>
         </div>
       </aside>
@@ -210,6 +226,16 @@ function StatsIcon({ className }: { className?: string }) {
       <line x1="18" y1="20" x2="18" y2="10" />
       <line x1="12" y1="20" x2="12" y2="4" />
       <line x1="6" y1="20" x2="6" y2="14" />
+    </svg>
+  );
+}
+
+function ImportNavIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+      <polyline points="7,10 12,15 17,10" />
+      <line x1="12" y1="15" x2="12" y2="3" />
     </svg>
   );
 }

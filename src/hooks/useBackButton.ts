@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { isCapacitorNative } from '@/services/capacitorFS';
+import { isTauriNative } from '@/services/tauriFS';
 
 /**
  * Global back button callback stack.
@@ -14,13 +14,16 @@ function registerGlobalListener() {
   if (listenerRegistered) return;
   listenerRegistered = true;
 
-  import('@capacitor/app').then(({ App }) => {
-    App.addListener('backButton', () => {
-      // Fire only the top (last-registered) handler
+  // On Tauri Android, listen for the back button via window event
+  // Tauri emits a custom event for the Android back button
+  document.addEventListener('keydown', (e) => {
+    // Android back button maps to Escape in WebView
+    if (e.key === 'Escape' || e.key === 'GoBack') {
       if (backHandlerStack.length > 0) {
+        e.preventDefault();
         backHandlerStack[backHandlerStack.length - 1].handler();
       }
-    });
+    }
   });
 }
 
@@ -38,9 +41,9 @@ function registerGlobalListener() {
  */
 export function useBackButton(handler: () => void) {
   useEffect(() => {
-    if (!isCapacitorNative()) return;
+    if (!isTauriNative()) return;
 
-    // Ensure the global Capacitor listener is registered once
+    // Ensure the global listener is registered once
     registerGlobalListener();
 
     // Register this handler on the stack
@@ -54,5 +57,4 @@ export function useBackButton(handler: () => void) {
     };
   });
   // No dep array: re-registers every render to keep handler closure fresh.
-  // Same pattern as useReaderKeyboard — cost is minimal (array push/splice).
 }

@@ -66,6 +66,7 @@ function createMockFS(fileSystem: Record<string, MockFile | 'dir'>): FSAdapter {
       return file.binary || new ArrayBuffer(0);
     }),
     writeFile: vi.fn().mockResolvedValue(undefined),
+    writeBinaryFile: vi.fn(),
     mkdir: vi.fn().mockResolvedValue(undefined),
     exists: vi.fn().mockImplementation(async (path: string) => {
       return path in fileSystem;

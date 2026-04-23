@@ -30,6 +30,7 @@ function createMockFS() {
     writeFile: vi.fn().mockImplementation(async (path: string, content: string) => {
       files.set(path, content);
     }),
+    writeBinaryFile: vi.fn(),
     mkdir: vi.fn().mockImplementation(async (path: string) => {
       dirs.add(path);
     }),

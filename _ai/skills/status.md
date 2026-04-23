@@ -1,35 +1,50 @@
 # LibReader — Project Status
 
-Last updated: 2026-04-06
+Last updated: 2026-04-23
 
 ## What's Done
 
 ### Core Infrastructure
 - [x] Vite + React + TypeScript + Tailwind v4 + Zustand + React Router setup
 - [x] File System Access API integration (WebFSAdapter) with IndexedDB reconnection
-- [x] **Capacitor filesystem integration (CapacitorFSAdapter)** with native path-based access
-- [x] **Platform detection** — `useFileSystem` auto-selects WebFSAdapter (web) or CapacitorFSAdapter (native)
+- [x] **Tauri v2 filesystem integration (TauriFSAdapter)** with native path-based access
+- [x] **Platform detection** — `useFileSystem` auto-selects WebFSAdapter (web) or TauriFSAdapter (Tauri native)
 - [x] Vault parser: scans folders, parses frontmatter, resolves covers, detects formats
 - [x] Zustand store with localStorage persistence
-- [x] Routing: Library, Item Detail, Folder, Settings pages
-- [x] Layout: sidebar navigation, mobile header, theme support (light/dark/system)
+- [x] Routing: Library, Item Detail, Folder, Import, Stats, Settings pages
+- [x] Layout: sidebar navigation, mobile header, theme support (light/dark/eink/system)
 - [x] Library grid/list views with search, sort, and filter
 - [x] Welcome screen when no vault configured (web: directory picker, native: path input)
 
-### Android / Capacitor
-- [x] `@capacitor/android` installed, `android/` project scaffolded
-- [x] `CapacitorFSAdapter` with full lifecycle methods (requestAccess, tryRestore, disconnect, isReady, getRootName, cleanup, setVaultPath, getVaultPath)
-- [x] `useFileSystem` hook: platform detection via `isCapacitorNative()`, adapter switching
-- [x] Native vault path input on LibraryPage welcome screen and SettingsPage
-- [x] Vault path persisted in localStorage (`libreader-native-vault-path`)
-- [x] `index.html` updated: viewport-fit=cover, safe area insets, mobile-web-app-capable
-- [x] Android permissions: READ/WRITE_EXTERNAL_STORAGE (API <=32), MANAGE_EXTERNAL_STORAGE (API 30+), READ_MEDIA_IMAGES/AUDIO (API 33+)
-- [x] `requestLegacyExternalStorage` for Android 10 compatibility
-- [x] `capacitor.config.json`: androidScheme https, ExternalStorage directory
-- [x] `cap sync android` completed — web assets deployed to android project
+### Tauri v2 (Replaces Capacitor)
+- [x] `src-tauri/` with Rust backend, plugins (fs, http, process, log)
+- [x] `TauriFSAdapter` with full lifecycle methods
+- [x] `useFileSystem` hook: platform detection via `isTauriNative()`, adapter switching
+- [x] `useBackButton` hook: Escape keydown (Tauri process exit on root)
+- [x] `tauri.conf.json`: identifier `com.libreader.app`, frontendDist `../dist`
+- [x] Capabilities configured: FS read/write, HTTP fetch, process exit
+- [x] Capacitor fully removed (all deps, files, code)
+- [x] **Linux builds**: DEB (6.9MB), RPM (6.9MB)
+- [x] **Android builds**: APK (19MB), AAB
+
+### AI Integration
+- [x] `AIProviderConfig` type in Zustand store (persisted)
+- [x] AI provider settings section in SettingsPage (provider, API key, model, base URL, test connection)
+- [x] `aiService.ts` — unified abstraction over 4 LLM providers (OpenAI, Anthropic, GitHub Models, Ollama)
+- [x] Tauri HTTP plugin on native, fetch+proxy on web, Anthropic direct browser header
+- [x] Import wizard AI buttons: "Completar datos con IA", "Sugerir tags con IA", "Generar resumen con IA"
+- [x] `summary` field in ImportMetadata, included in generated .md body
+- [x] Dev CORS proxy (`scripts/proxy.ts`) on localhost:3001
+
+### E-Ink Theme
+- [x] `.eink` CSS class on `<html>` with B&W tokens
+- [x] Animation/shadow/transition kill rules
+- [x] ThemeProvider support for 4 themes (light/dark/eink/system)
+- [x] Settings 4-button theme selector
+- [x] Layout toggle cycles through all 4 themes
 
 ### Readers
-- [x] **ComicReader** (~1303 lines + extracted modules) — CBZ (fflate) + CBR (libarchive.js WASM)
+- [x] **ComicReader** (~1498 lines + extracted modules) — CBZ (fflate) + CBR (libarchive.js WASM)
   - Paged, vertical scroll, horizontal scroll modes
   - Single/dual page layouts, LTR/RTL direction
   - Pinch-to-zoom, double-tap zoom, swipe navigation
@@ -45,7 +60,7 @@ Last updated: 2026-04-06
   - Voice comments panel
   - Reading state + annotations saved to vault
   - Extracted: `comicUtils.ts`, `ComicScrollUnits.tsx`, `ComicIcons.tsx` (reader-specific only)
-- [x] **PdfReader** (~956 lines) — pdfjs-dist with web worker
+- [x] **PdfReader** (~1609 lines) — pdfjs-dist with web worker
   - Paged, vertical scroll modes
   - Single/dual page layouts
   - Render scale (0.5-3.0) + CSS zoom (pinch only, no double-tap zoom)
@@ -95,7 +110,7 @@ Last updated: 2026-04-06
   - `.youtube` file format: plain text with YouTube URL
 - [x] **Shared reader infrastructure**:
   - `useAnnotations` hook — unified annotation state management for all 5 readers
-  - `ReaderIcons.tsx` — shared SVG icons (CloseIcon, BookmarkIcon, ChevronIcon, SearchIcon, AnnotationsDocIcon, AnnotationsBubbleIcon)
+  - `ReaderIcons.tsx` — shared SVG icons
   - `tapZones.ts` — consistent horizontal band tap zone layout
   - `AnnotationPopup.tsx` — shared floating color picker
   - `AnnotationsPanel.tsx` — shared sidebar with bookmarks, highlights, inline note editing
@@ -146,11 +161,13 @@ Last updated: 2026-04-06
 - [x] `_ai/skills/annotations.md` — annotation system, storage formats, voice comments
 - [x] `_ai/skills/decisions.md` — design decisions and rationale
 - [x] `_ai/skills/status.md` — this file
+- [x] `README.md` — full project documentation
 
 ### Scripts & Entry Points
 - [x] `_ai/scripts/generate-agent-docs.sh` — generates CLAUDE.md and .github/copilot-instructions.md from skills
 - [x] `scripts/check.sh` — runs typecheck + tests + build
 - [x] `scripts/dev.sh` — starts dev server
+- [x] `scripts/proxy.ts` — CORS proxy for AI APIs (Bun server on :3001)
 - [x] `CLAUDE.md` — auto-generated entry point for Claude Code
 - [x] `.github/copilot-instructions.md` — auto-generated entry point for GitHub Copilot
 
@@ -158,21 +175,24 @@ Last updated: 2026-04-06
 
 - `textlessPagesRef` in PdfReader is write-only — populated but not yet read. Ready for auto-activate annotate mode feature.
 - No double-tap zoom in PDF or EPUB (removed by user request). Pinch-to-zoom still works.
+- AppImage bundling fails on Arch Linux (linuxdeploy issue). DEB/RPM work fine.
+- Android APK is unsigned — needs signing for Play Store distribution.
 
 ## What's Next
 
-### Short Term (Capacitor Android — remaining)
-- Build and test on actual Android device/emulator
-- Verify filesystem permissions prompt works correctly on Android
-- Test vault path resolution on Android (typical path: `/storage/emulated/0/Documents/library`)
-- Test all readers work in Capacitor WebView (epub.js iframe, pdfjs worker, libarchive WASM)
-- Handle Android back button (hardware) for reader close
+### Short Term
+- [ ] Create GitHub Actions CI workflow (web, Linux, Android, iOS via macOS runner)
+- [ ] Regenerate CLAUDE.md and copilot-instructions.md
+- [ ] Git commit + push all changes
 
 ### Medium Term
+- AI Chat — floating overlay widget + panel in readers
 - Search within EPUB/PDF content
-- Reading statistics / progress dashboard
+- Reading statistics / progress dashboard enhancements
 - Extract PdfReader components (bring under ~1500 lines)
+- Tauri iOS init (`cargo tauri ios init`) — builds only via GitHub Actions on macOS
 
 ### Future
 - Offline PWA support
 - Sync reading state across devices
+- APK signing for Play Store

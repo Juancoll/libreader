@@ -1,10 +1,10 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { WebFSAdapter } from '@/services/vaultParser';
-import { CapacitorFSAdapter, isCapacitorNative } from '@/services/capacitorFS';
+import { TauriFSAdapter, isTauriNative } from '@/services/tauriFS';
 import type { FSAdapter } from '@/services/vaultParser';
 
 /**
- * Unified adapter interface that both Web and Capacitor adapters implement.
+ * Unified adapter interface that both Web and Tauri adapters implement.
  * Extends FSAdapter with lifecycle methods needed by the hook.
  */
 interface ManagedFSAdapter extends FSAdapter {
@@ -16,16 +16,16 @@ interface ManagedFSAdapter extends FSAdapter {
   cleanup(): void;
 }
 
-/** True if running inside Capacitor native shell (Android/iOS). */
-const isNative = isCapacitorNative();
+/** True if running inside Tauri native shell (Linux desktop, Android). */
+const isNative = isTauriNative();
 
 /**
  * Create the singleton adapter based on platform.
- * On native: CapacitorFSAdapter (reads from device filesystem).
+ * On native: TauriFSAdapter (reads from device filesystem via Tauri FS plugin).
  * On web: WebFSAdapter (uses File System Access API + IndexedDB).
  */
 const fsAdapter: ManagedFSAdapter = isNative
-  ? new CapacitorFSAdapter()
+  ? new TauriFSAdapter()
   : new WebFSAdapter();
 
 /**
@@ -89,7 +89,7 @@ export function useFileSystem() {
    */
   const setNativeVaultPath = useCallback(async (path: string) => {
     setError(null);
-    if (!(fsAdapter instanceof CapacitorFSAdapter)) {
+    if (!(fsAdapter instanceof TauriFSAdapter)) {
       return false;
     }
     const ok = await fsAdapter.setVaultPath(path);
@@ -106,7 +106,7 @@ export function useFileSystem() {
    * Native-only: Get the currently configured vault path.
    */
   const getNativeVaultPath = useCallback(() => {
-    if (fsAdapter instanceof CapacitorFSAdapter) {
+    if (fsAdapter instanceof TauriFSAdapter) {
       return fsAdapter.getVaultPath();
     }
     return '';

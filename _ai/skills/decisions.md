@@ -156,3 +156,38 @@ Key decisions and their rationale, so future AI agents (and humans) understand w
 **Decision:** Annotate mode (region drag) works in both paged and scroll view modes.
 
 **Why:** There was no technical reason to restrict it. Each `PdfScrollPage` gets its own crosshair overlay and drag handlers. The `RegionDrag` type has an optional `page` field to track which page the drag started on (needed in scroll where multiple pages are visible).
+
+---
+
+## Tauri v2 Replaces Capacitor
+
+**Decision:** Migrated from Capacitor to Tauri v2 for all native platforms (Linux desktop, Android, future iOS).
+
+**Why:** Tauri provides a single framework for web, desktop, and mobile instead of Capacitor's mobile-only focus. Benefits: smaller binary sizes (~7MB DEB vs Electron's ~150MB), Rust backend for performance, unified plugin system (fs, http, process). Capacitor was fully removed — all `@capacitor/*` deps, `android/` project, `capacitor.config.json`, and `capacitorFS.ts` deleted.
+
+---
+
+## AI CORS Strategy: Tauri HTTP + Dev Proxy
+
+**Decision:** Three-tier approach for AI API calls:
+1. **Tauri native**: `@tauri-apps/plugin-http` bypasses CORS entirely
+2. **Web dev**: Bun proxy on `localhost:3001` forwards to LLM APIs
+3. **Anthropic exception**: `anthropic-dangerous-direct-browser-access` header works without proxy
+
+**Why:** Browser CORS blocks direct calls to OpenAI/GitHub/Ollama APIs. Tauri's native HTTP client has no CORS. For web development, a lightweight proxy is simpler than configuring each provider. Anthropic uniquely supports a browser opt-in header.
+
+---
+
+## AI Service Code-Split
+
+**Decision:** `aiService.ts` is dynamically imported only in `ImportPage.tsx`, producing a ~5KB separate chunk.
+
+**Why:** AI functionality is only used during import. Loading LLM client code on every page would waste bandwidth. Dynamic import keeps the main bundle lean.
+
+---
+
+## E-Ink Theme Is Visual-Only
+
+**Decision:** The `.eink` CSS class applies B&W colors, removes animations/shadows/transitions, but does NOT disable gestures, zoom, or transforms.
+
+**Why:** Target device is Boox Air 5C, which has a BSR processor that handles touch gestures and partial refresh natively. Disabling functional transforms would break the reading experience. Only decorative visual effects need removal for e-ink clarity.
