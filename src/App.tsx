@@ -8,6 +8,7 @@ import { SettingsPage } from '@/pages/SettingsPage';
 import { ImportPage } from '@/pages/ImportPage';
 import { useLibraryStore } from '@/store/libraryStore';
 import { useBackButton } from '@/hooks/useBackButton';
+import { AIChatPanel, AIChatButton } from '@/components/chat/AIChatPanel';
 
 const StatsPage = lazy(() => import('@/pages/StatsPage'));
 
@@ -79,6 +80,8 @@ export default function App() {
             <Route path="/settings" element={<SettingsPage />} />
           </Routes>
         </Layout>
+        <AIChatButton />
+        <AIChatPanel />
       </BrowserRouter>
     </ThemeProvider>
   );

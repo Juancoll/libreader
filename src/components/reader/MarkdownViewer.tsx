@@ -142,7 +142,10 @@ export function MarkdownViewer({ filePath, fs, onClose }: MarkdownViewerProps) {
     if (!sel || sel.toString().trim().length < 2) return;
 
     const info = resolveSelectionOffsets(sel);
-    if (info) setSelectionPopup(info);
+    if (info) {
+      useLibraryStore.getState().setChatContext({ selectedText: info.text });
+      setSelectionPopup(info);
+    }
   }, [resolveSelectionOffsets]);
 
   // ---- Highlight actions ----

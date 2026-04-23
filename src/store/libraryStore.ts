@@ -18,6 +18,19 @@ export interface AIProviderConfig {
   baseUrl?: string; // Custom endpoint (Ollama, Azure, etc.)
 }
 
+// AI Chat context — set by readers/pages to give the chat contextual awareness
+export interface AIChatContext {
+  bookId?: string;
+  bookTitle?: string;
+  bookAuthors?: string[];
+  bookTags?: string[];
+  bookSummary?: string;
+  filePath?: string;
+  format?: string;
+  selectedText?: string;
+  chapter?: string;
+}
+
 interface LibraryState {
   // Data
   items: LibraryItem[];
@@ -42,6 +55,10 @@ interface LibraryState {
   // AI config
   aiProvider: AIProviderConfig | null;
 
+  // AI Chat state (ephemeral — not persisted)
+  chatOpen: boolean;
+  chatContext: AIChatContext;
+
   // Actions
   setItems: (items: LibraryItem[]) => void;
   setFilter: (filter: Partial<LibraryFilter>) => void;
@@ -54,6 +71,9 @@ interface LibraryState {
   setTheme: (theme: 'light' | 'dark' | 'system' | 'eink') => void;
   setSearchHighlightColor: (color: string) => void;
   setAIProvider: (provider: AIProviderConfig | null) => void;
+  setChatOpen: (open: boolean) => void;
+  setChatContext: (ctx: Partial<AIChatContext>) => void;
+  clearChatContext: () => void;
 
   // Category CRUD
   addCategory: (category: AnnotationCategory) => void;
@@ -101,6 +121,10 @@ export const useLibraryStore = create<LibraryState>()(
       // AI
       aiProvider: null,
 
+      // AI Chat (ephemeral)
+      chatOpen: false,
+      chatContext: {},
+
       // Actions
       setItems: (items) => set({ items }),
       setFilter: (filter) =>
@@ -117,6 +141,9 @@ export const useLibraryStore = create<LibraryState>()(
       setTheme: (theme) => set({ theme }),
       setSearchHighlightColor: (color) => set({ searchHighlightColor: color }),
       setAIProvider: (provider) => set({ aiProvider: provider }),
+      setChatOpen: (open) => set({ chatOpen: open }),
+      setChatContext: (ctx) => set((state) => ({ chatContext: { ...state.chatContext, ...ctx } })),
+      clearChatContext: () => set({ chatContext: {} }),
 
       // Category CRUD
       addCategory: (category) =>

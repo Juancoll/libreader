@@ -256,6 +256,9 @@ export function EpubReader({ filePath, fs, onClose, onProgress }: EpubReaderProp
             const text = range.toString();
             if (text.length < 2) return;
 
+            // Expose to AI chat context
+            useLibraryStore.getState().setChatContext({ selectedText: text });
+
             const sel = contents.window.getSelection();
             if (!sel || sel.rangeCount === 0) return;
             const rect = sel.getRangeAt(0).getBoundingClientRect();

@@ -1,4 +1,4 @@
-import { useState, lazy, Suspense } from 'react';
+import { useState, lazy, Suspense, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useLibraryStore } from '@/store/libraryStore';
 import { useFileSystem } from '@/hooks/useFileSystem';
@@ -72,17 +72,33 @@ function BookDetailContent({
   fs: FSAdapter;
 }) {
   const coverUrl = useCoverUrl(fs, item.cover);
+  const setChatContext = useLibraryStore((s) => s.setChatContext);
+  const clearChatContext = useLibraryStore((s) => s.clearChatContext);
   const [activeReader, setActiveReader] = useState<{
     format: FileFormat;
     path: string;
   } | null>(null);
   const [showNotes, setShowNotes] = useState(false);
 
+  // Set AI chat context when viewing a book
+  useEffect(() => {
+    setChatContext({
+      bookId: item.id,
+      bookTitle: item.title,
+      bookAuthors: item.authors,
+      bookTags: item.tags,
+      format: item.formats?.[0],
+    });
+    return () => clearChatContext();
+  }, [item.id, item.title, item.authors, item.tags, item.formats, setChatContext, clearChatContext]);
+
   const openReader = (format: FileFormat, path: string) => {
+    setChatContext({ filePath: path, format });
     setActiveReader({ format, path });
   };
 
   const closeReader = () => {
+    setChatContext({ filePath: undefined, selectedText: undefined });
     setActiveReader(null);
   };
 

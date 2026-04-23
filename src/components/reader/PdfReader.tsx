@@ -251,6 +251,7 @@ export function PdfReader({ filePath, fs, onClose, onProgress }: PdfReaderProps)
 
   // Handle text selection from page components
   const handleTextSelection = useCallback((sel: SelectionInfo) => {
+    useLibraryStore.getState().setChatContext({ selectedText: sel.text });
     setSelectionPopup(sel);
   }, []);
 
