@@ -14,7 +14,7 @@ jobs:
   web:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - uses: oven-sh/setup-bun@v2
         with:
@@ -31,7 +31,7 @@ jobs:
       - name: Build
         run: bun run build
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: web-dist
           path: dist/
@@ -43,7 +43,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: web
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - uses: oven-sh/setup-bun@v2
         with:
@@ -67,7 +67,7 @@ jobs:
       - name: Tauri build (DEB + RPM)
         run: bunx tauri build --bundles deb,rpm
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: linux-bundles
           path: |
@@ -81,7 +81,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: web
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - uses: oven-sh/setup-bun@v2
         with:
@@ -112,7 +112,7 @@ jobs:
       - name: Tauri Android build
         run: bunx tauri android build
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: android-bundles
           path: |
@@ -126,7 +126,7 @@ jobs:
     runs-on: macos-latest
     needs: web
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - uses: oven-sh/setup-bun@v2
         with:
@@ -148,7 +148,7 @@ jobs:
         run: bunx tauri ios build --export-method app-store-connect
         continue-on-error: true  # iOS build may need signing config
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: success()
         with:
           name: ios-bundle
