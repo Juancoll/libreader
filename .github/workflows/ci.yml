@@ -39,6 +39,7 @@ jobs:
 
   # ── Linux: Tauri DEB + RPM ──
   linux:
+    if: false  # TODO: enable when ready
     runs-on: ubuntu-latest
     needs: web
     steps:
@@ -76,6 +77,7 @@ jobs:
 
   # ── Android: APK + AAB ──
   android:
+    if: false  # TODO: enable when Android signing is configured
     runs-on: ubuntu-latest
     needs: web
     steps:
@@ -120,6 +122,7 @@ jobs:
 
   # ── iOS: Tauri iOS build (macOS runner) ──
   ios:
+    if: false  # TODO: enable when Apple signing is configured
     runs-on: macos-latest
     needs: web
     steps:
