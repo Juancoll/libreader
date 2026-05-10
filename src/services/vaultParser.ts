@@ -42,6 +42,7 @@ import type {
   LibraryItem,
   FileFormat,
   ReadingStatus,
+  ItemType,
   VaultFolder,
 } from '@/types';
 
@@ -66,6 +67,16 @@ interface BookFrontmatter {
   date_started?: string;
   date_finished?: string;
   tags?: string[];
+  /** Item type: 'book', 'comic', 'collection-comic', etc. */
+  type?: string;
+  /** Collection: year the series started */
+  year_start?: string | number;
+  /** Collection: year the series ended */
+  year_end?: string | number;
+  /** Collection: total published volumes */
+  volumes_count?: string | number;
+  /** Collection: volumes owned in vault */
+  volumes_owned?: string | number;
   [key: string]: unknown;
 }
 
@@ -389,45 +400,54 @@ function isImageFile(filename: string): boolean {
   return /\.(png|jpg|jpeg|webp|gif|svg)$/i.test(filename);
 }
 
+/** Valid ItemType values */
+const VALID_ITEM_TYPES: Set<string> = new Set([
+  'book', 'comic', 'paper', 'episode', 'movie', 'course', 'author',
+  'collection-book', 'collection-comic', 'collection-paper',
+  'collection-episode', 'collection-movie', 'collection-course',
+  'collection',
+]);
+
+function parseItemType(raw?: string): ItemType | undefined {
+  if (!raw) return undefined;
+  const normalized = raw.toLowerCase().trim();
+  return VALID_ITEM_TYPES.has(normalized) ? (normalized as ItemType) : undefined;
+}
+
+function isCollectionType(type?: ItemType): boolean {
+  return !!type && type.startsWith('collection');
+}
+
 /** Map of filename -> full vault path. Used to resolve Obsidian wikilinks. */
 type FileIndex = Map<string, string>;
 
 /**
  * Build an index of all image files in the vault for wikilink resolution.
- * Scans up to maxDepth levels deep.
+ * Only scans 1 level deep (item directories) — deeper scanning is too slow
+ * with the File System Access API. Cover images in _attachments are resolved
+ * directly in parseBookDir.
  */
 async function buildImageIndex(
   fs: FSAdapter,
   rootDirs: string[],
-  maxDepth = 3
 ): Promise<FileIndex> {
   const index: FileIndex = new Map();
 
-  async function scan(dirPath: string, depth: number) {
-    if (depth > maxDepth) return;
+  for (const rootDir of rootDirs) {
     try {
-      const entries = await fs.readDir(dirPath);
-      const subdirs: string[] = [];
+      const entries = await fs.readDir(rootDir);
       for (const entry of entries) {
-        if (entry.isDirectory) {
-          subdirs.push(entry.path);
-        } else if (isImageFile(entry.name)) {
-          // Only store first occurrence (closest to root wins for Obsidian resolution)
+        if (!entry.isDirectory && isImageFile(entry.name)) {
           if (!index.has(entry.name)) {
             index.set(entry.name, entry.path);
           }
         }
-      }
-      // Scan subdirectories in parallel instead of sequential
-      if (subdirs.length > 0) {
-        await Promise.all(subdirs.map((p) => scan(p, depth + 1)));
       }
     } catch {
       // Skip inaccessible directories
     }
   }
 
-  await Promise.all(rootDirs.map((dir) => scan(dir, 0)));
   return index;
 }
 
@@ -461,6 +481,22 @@ async function parseBookDir(
     let attachFiles: DirEntry[] | null = null;
     if (attachDir) {
       try { attachFiles = await fs.readDir(attachDir.path); } catch { /* ok */ }
+    }
+
+    // Feed images from this directory into the shared index (lazy building)
+    if (imageIndex) {
+      for (const entry of entries) {
+        if (!entry.isDirectory && isImageFile(entry.name) && !imageIndex.has(entry.name)) {
+          imageIndex.set(entry.name, entry.path);
+        }
+      }
+      if (attachFiles) {
+        for (const f of attachFiles) {
+          if (!f.isDirectory && isImageFile(f.name) && !imageIndex.has(f.name)) {
+            imageIndex.set(f.name, f.path);
+          }
+        }
+      }
     }
 
     if (data.cover) {
@@ -597,6 +633,13 @@ async function parseBookDir(
       annotationCount,
       folder: folderName,
       lastRead,
+      // Type system
+      itemType: parseItemType(data.type),
+      isCollection: isCollectionType(parseItemType(data.type)),
+      yearStart: data.year_start?.toString(),
+      yearEnd: data.year_end?.toString(),
+      volumesCount: data.volumes_count ? Number(data.volumes_count) : undefined,
+      volumesOwned: data.volumes_owned ? Number(data.volumes_owned) : undefined,
     };
   } catch (err) {
     console.warn(`Failed to parse book directory: ${dirPath}`, err);
@@ -620,6 +663,7 @@ async function safeReadDir(fs: FSAdapter, path: string): Promise<DirEntry[]> {
 
 /**
  * Parse a "flat" directory where each subdirectory is an item (like books/).
+ * For collections, recursively scans subdirectories as child items.
  */
 async function parseFlatDir(
   fs: FSAdapter,
@@ -634,6 +678,47 @@ async function parseFlatDir(
   const promises = itemDirs.map((e) => parseBookDir(fs, e.path, imageIndex, folderName));
   const results = await Promise.all(promises);
   const items = results.filter((b): b is LibraryItem => b !== null);
+
+  // For each collection, scan its subdirectories for child items
+  const childItemArrays = await Promise.all(
+    items
+      .filter((item) => item.isCollection)
+      .map(async (collection) => {
+        const collectionEntries = await safeReadDir(fs, collection.vaultPath);
+        const childDirs = collectionEntries.filter(
+          (e) => e.isDirectory && !e.name.startsWith('_') && !e.name.endsWith('.reading')
+        );
+        if (childDirs.length === 0) return [];
+
+        const childPromises = childDirs.map((e) =>
+          parseBookDir(fs, e.path, imageIndex, folderName)
+        );
+        const childResults = await Promise.all(childPromises);
+        const children = childResults.filter((b): b is LibraryItem => b !== null);
+
+        // Link children to parent
+        const childIds: string[] = [];
+        for (const child of children) {
+          child.parentCollectionId = collection.id;
+          childIds.push(child.id);
+        }
+        collection.childIds = childIds;
+        collection.childCount = childIds.length;
+
+        // If no volumesOwned from frontmatter, use actual child count
+        if (collection.volumesOwned === undefined) {
+          collection.volumesOwned = childIds.length;
+        }
+
+        return children;
+      })
+  );
+
+  // Add all child items to the result
+  for (const children of childItemArrays) {
+    items.push(...children);
+  }
+
   return items;
 }
 

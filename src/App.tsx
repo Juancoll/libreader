@@ -4,6 +4,7 @@ import { Layout } from '@/components/layout/Layout';
 import { LibraryPage } from '@/pages/LibraryPage';
 import { BookDetailPage } from '@/pages/BookDetailPage';
 import { FolderPage } from '@/pages/FolderPage';
+import { CollectionPage } from '@/pages/CollectionPage';
 import { SettingsPage } from '@/pages/SettingsPage';
 import { ImportPage } from '@/pages/ImportPage';
 import { useLibraryStore } from '@/store/libraryStore';
@@ -74,6 +75,7 @@ export default function App() {
           <Routes>
             <Route path="/" element={<LibraryPage />} />
             <Route path="/item/:id" element={<BookDetailPage />} />
+            <Route path="/collection/:id" element={<CollectionPage />} />
             <Route path="/folder/:slug" element={<FolderPage />} />
             <Route path="/stats" element={<Suspense fallback={<div className="flex-1 flex items-center justify-center"><div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" /></div>}><StatsPage /></Suspense>} />
             <Route path="/import" element={<ImportPage />} />

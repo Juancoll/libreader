@@ -5,17 +5,50 @@ import { extractCbz } from '@/services/comicParser';
 /** Cache of extracted comic covers: filePath -> blob URL */
 const comicCoverCache = new Map<string, string>();
 
+/** Cache of resolved cover URLs: vaultPath -> blob URL */
+const coverUrlCache = new Map<string, string>();
+
+// ---- Concurrency-limited queue for cover loading ----
+const MAX_CONCURRENT = 6;
+let running = 0;
+const queue: Array<() => void> = [];
+
+function enqueue<T>(fn: () => Promise<T>): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const run = () => {
+      running++;
+      fn().then(resolve, reject).finally(() => {
+        running--;
+        if (queue.length > 0) {
+          queue.shift()!();
+        }
+      });
+    };
+    if (running < MAX_CONCURRENT) {
+      run();
+    } else {
+      queue.push(run);
+    }
+  });
+}
+
 /**
  * Hook that resolves a vault path to a blob URL for displaying images.
  * If coverPath is undefined but archivePath is provided (for comics),
  * extracts the first page from the CBZ as a cover thumbnail.
+ * Uses a concurrency-limited queue to avoid overwhelming the FS API.
  */
 export function useCoverUrl(
   fs: FSAdapter | null,
   coverPath: string | undefined,
   archivePath?: string
 ): string | null {
-  const [url, setUrl] = useState<string | null>(null);
+  const [url, setUrl] = useState<string | null>(() => {
+    // Sync init from cache
+    if (coverPath && coverUrlCache.has(coverPath)) return coverUrlCache.get(coverPath)!;
+    if (archivePath && comicCoverCache.has(archivePath)) return comicCoverCache.get(archivePath)!;
+    return null;
+  });
   const extractedUrlRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -24,16 +57,21 @@ export function useCoverUrl(
       return;
     }
 
-    // Cancellation ref — shared by reference so async functions see updates
     const cancelRef = { current: false };
 
-    // If we have a static cover path, use it directly
     if (coverPath) {
-      fs.getFileUrl(coverPath).then((blobUrl) => {
+      // Return cached immediately
+      const cached = coverUrlCache.get(coverPath);
+      if (cached) {
+        setUrl(cached);
+        return;
+      }
+
+      enqueue(() => fs.getFileUrl(coverPath)).then((blobUrl) => {
+        coverUrlCache.set(coverPath, blobUrl);
         if (!cancelRef.current) setUrl(blobUrl);
       }).catch(() => {
         if (!cancelRef.current) {
-          // Cover path failed, try archive fallback
           if (archivePath) {
             extractComicCover(fs, archivePath, cancelRef, setUrl, extractedUrlRef);
           } else {
@@ -44,7 +82,6 @@ export function useCoverUrl(
       return () => { cancelRef.current = true; };
     }
 
-    // No cover path - try extracting from archive
     if (archivePath && archivePath.endsWith('.cbz')) {
       extractComicCover(fs, archivePath, cancelRef, setUrl, extractedUrlRef);
       return () => { cancelRef.current = true; };

@@ -12,9 +12,11 @@ const statuses: { value: ReadingStatus; label: string }[] = [
 interface FilterBarProps {
   /** When set, scope tag/status counts to this folder and hide folder chips */
   folderName?: string;
+  /** When set, scope to children of this collection and hide folder chips */
+  collectionId?: string;
 }
 
-export function FilterBar({ folderName }: FilterBarProps = {}) {
+export function FilterBar({ folderName, collectionId }: FilterBarProps = {}) {
   const filter = useLibraryStore((s) => s.filter);
   const setFilter = useLibraryStore((s) => s.setFilter);
   const clearFilters = useLibraryStore((s) => s.clearFilters);
@@ -40,21 +42,22 @@ export function FilterBar({ folderName }: FilterBarProps = {}) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filter.search]);
 
-  // Scope items: either a specific folder, or all showInLibrary folders
+  // Scope items: collection children, specific folder, or all showInLibrary folders
   const scopedItems = useMemo(() => {
+    if (collectionId) return items.filter((i) => i.parentCollectionId === collectionId);
     if (folderName) return items.filter((i) => i.folder === folderName);
     const libraryFolderNames = new Set(
       vaultConfig.folders.filter((f) => f.showInLibrary !== false).map((f) => f.name)
     );
     return items.filter((i) => i.folder ? libraryFolderNames.has(i.folder) : true);
-  }, [items, folderName, vaultConfig.folders]);
+  }, [items, folderName, collectionId, vaultConfig.folders]);
 
   // Collect all unique tags from scoped items
   const allTags = [...new Set(scopedItems.flatMap((i) => i.tags))].sort();
 
   // Collect all folders that actually have items (only for library-wide view)
   const folderCounts = new Map<string, number>();
-  if (!folderName) {
+  if (!folderName && !collectionId) {
     for (const item of scopedItems) {
       if (item.folder) {
         folderCounts.set(item.folder, (folderCounts.get(item.folder) || 0) + 1);
@@ -62,7 +65,7 @@ export function FilterBar({ folderName }: FilterBarProps = {}) {
     }
   }
   // Keep folder order from config, only showing ones with items and showInLibrary
-  const activeFolders = folderName
+  const activeFolders = (folderName || collectionId)
     ? []
     : vaultConfig.folders
         .filter((f) => f.showInLibrary !== false && folderCounts.has(f.name))

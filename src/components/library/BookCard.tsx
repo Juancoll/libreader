@@ -37,15 +37,18 @@ function isComic(item: LibraryItem): boolean {
 }
 
 export function BookCard({ item, fs }: BookCardProps) {
-  // For comics without a cover, try extracting from the first CBZ archive
   const archivePath = !item.cover && isComic(item)
     ? (item.filePaths.cbz || undefined)
     : undefined;
   const coverUrl = useCoverUrl(fs, item.cover, archivePath);
 
+  const linkTo = item.isCollection
+    ? `/collection/${encodeURIComponent(item.id)}`
+    : `/item/${encodeURIComponent(item.id)}`;
+
   return (
     <Link
-      to={`/item/${encodeURIComponent(item.id)}`}
+      to={linkTo}
       className="group flex flex-col rounded-xl overflow-hidden border border-border bg-surface hover:shadow-lg hover:border-primary/30 transition-all duration-200"
     >
       {/* Cover */}
@@ -60,7 +63,16 @@ export function BookCard({ item, fs }: BookCardProps) {
         ) : (
           <div className="w-full h-full flex items-center justify-center bg-primary-light">
             <span className="text-4xl font-bold text-primary opacity-50">
-              {formatIcon(item.formats)}
+              {item.isCollection ? 'S' : formatIcon(item.formats)}
+            </span>
+          </div>
+        )}
+
+        {/* Collection badge (top-left) */}
+        {item.isCollection && (
+          <div className="absolute top-2 left-2">
+            <span className="px-1.5 py-0.5 text-[10px] font-bold rounded bg-accent/90 text-white">
+              {item.childCount ?? item.volumesOwned ?? '?'} vol.
             </span>
           </div>
         )}
@@ -84,7 +96,7 @@ export function BookCard({ item, fs }: BookCardProps) {
         )}
 
         {/* Progress percentage badge */}
-        {item.progress !== undefined && item.progress > 0 && (
+        {item.progress !== undefined && item.progress > 0 && !item.isCollection && (
           <div className="absolute top-2 left-2">
             <span className="px-1.5 py-0.5 text-[10px] font-bold rounded bg-primary/90 text-white tabular-nums">
               {item.progress}%
@@ -103,6 +115,11 @@ export function BookCard({ item, fs }: BookCardProps) {
             </span>
           ))}
         </div>
+
+        {/* Collection stacked effect */}
+        {item.isCollection && (
+          <div className="absolute inset-x-1 -bottom-0.5 h-2 rounded-b-xl bg-border/50 -z-10" />
+        )}
       </div>
 
       {/* Info */}
@@ -113,6 +130,11 @@ export function BookCard({ item, fs }: BookCardProps) {
         {item.authors.length > 0 && (
           <p className="text-xs text-text-secondary line-clamp-1">
             {item.authors.join(', ')}
+          </p>
+        )}
+        {item.isCollection && item.volumesCount && (
+          <p className="text-xs text-text-muted">
+            {item.volumesOwned ?? '?'}/{item.volumesCount} vol.
           </p>
         )}
         {item.tags.length > 0 && (
@@ -140,9 +162,13 @@ export function BookListItem({ item, fs }: BookCardProps) {
     : undefined;
   const coverUrl = useCoverUrl(fs, item.cover, archivePath);
 
+  const linkTo = item.isCollection
+    ? `/collection/${encodeURIComponent(item.id)}`
+    : `/item/${encodeURIComponent(item.id)}`;
+
   return (
     <Link
-      to={`/item/${encodeURIComponent(item.id)}`}
+      to={linkTo}
       className="flex items-center gap-4 p-3 rounded-lg border border-border hover:bg-surface-hover hover:border-primary/30 transition-all"
     >
       {/* Cover thumbnail */}
@@ -152,7 +178,7 @@ export function BookListItem({ item, fs }: BookCardProps) {
         ) : (
           <div className="w-full h-full flex items-center justify-center bg-primary-light">
             <span className="text-lg font-bold text-primary opacity-50">
-              {formatIcon(item.formats)}
+              {item.isCollection ? 'S' : formatIcon(item.formats)}
             </span>
           </div>
         )}
@@ -166,10 +192,27 @@ export function BookListItem({ item, fs }: BookCardProps) {
             {item.authors.join(', ')}
           </p>
         )}
+        {item.tags.length > 0 && (
+          <div className="flex flex-wrap gap-1 mt-0.5">
+            {item.tags.slice(0, 3).map((tag) => (
+              <span
+                key={tag}
+                className="px-1.5 py-0.5 text-[10px] rounded-full bg-surface-alt text-text-muted"
+              >
+                {tag}
+              </span>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Meta */}
       <div className="flex items-center gap-3 shrink-0">
+        {item.isCollection && (
+          <span className="px-1.5 py-0.5 text-[10px] font-bold rounded bg-accent/90 text-white">
+            {item.childCount ?? item.volumesOwned ?? '?'} vol.
+          </span>
+        )}
         {item.progress !== undefined && item.progress > 0 && (
           <span className="text-xs text-primary font-medium">{item.progress}%</span>
         )}

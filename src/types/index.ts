@@ -4,6 +4,13 @@
 export type FileFormat = 'epub' | 'pdf' | 'cbz' | 'cbr' | 'md' | 'youtube';
 export type ReadingStatus = 'to-read' | 'reading' | 'finished' | 'abandoned';
 
+/** Item type from frontmatter `type:` field */
+export type ItemType =
+  | 'book' | 'comic' | 'paper' | 'episode' | 'movie' | 'course' | 'author'
+  | 'collection-book' | 'collection-comic' | 'collection-paper'
+  | 'collection-episode' | 'collection-movie' | 'collection-course'
+  | 'collection';
+
 /** A configured folder in the vault that contains library items. */
 export interface VaultFolder {
   /** Display name for the folder (e.g. "Libros", "Comics") */
@@ -48,6 +55,26 @@ export interface LibraryItem {
   folder?: string;
   /** ISO date of last reading session (from state.json) */
   lastRead?: string;
+
+  // ---- Type system ----
+  /** Item type from frontmatter (e.g. 'book', 'comic', 'collection-comic') */
+  itemType?: ItemType;
+  /** True if this is a collection (type starts with 'collection') */
+  isCollection?: boolean;
+  /** Number of child items inside this collection */
+  childCount?: number;
+  /** IDs of child items (for collections) */
+  childIds?: string[];
+  /** Parent collection ID (for items inside a collection) */
+  parentCollectionId?: string;
+  /** Collection-specific: year the collection started */
+  yearStart?: string;
+  /** Collection-specific: year the collection ended */
+  yearEnd?: string;
+  /** Collection-specific: total volumes published */
+  volumesCount?: number;
+  /** Collection-specific: volumes owned in vault */
+  volumesOwned?: number;
 }
 
 export interface VaultConfig {

@@ -7,6 +7,10 @@ interface UseFilteredItemsOptions {
   folderName?: string;
   /** Only include items from folders with showInLibrary=true */
   libraryOnly?: boolean;
+  /** Only include child items of this collection ID */
+  collectionId?: string;
+  /** If true, include items that belong to a collection (normally hidden) */
+  includeCollectionChildren?: boolean;
 }
 
 /**
@@ -21,9 +25,19 @@ export function useFilteredItems(options?: UseFilteredItemsOptions): LibraryItem
 
   const folderName = options?.folderName;
   const libraryOnly = options?.libraryOnly;
+  const collectionId = options?.collectionId;
+  const includeCollectionChildren = options?.includeCollectionChildren;
 
   return useMemo(() => {
     let result = [...items];
+
+    // If viewing a specific collection, show only its children
+    if (collectionId) {
+      result = result.filter((item) => item.parentCollectionId === collectionId);
+    } else if (!includeCollectionChildren) {
+      // By default, hide items that belong to a collection (they appear inside their collection page)
+      result = result.filter((item) => !item.parentCollectionId);
+    }
 
     // Scope to showInLibrary folders
     if (libraryOnly) {
@@ -114,5 +128,5 @@ export function useFilteredItems(options?: UseFilteredItemsOptions): LibraryItem
     });
 
     return result;
-  }, [items, filter, sort, vaultConfig, folderName, libraryOnly]);
+  }, [items, filter, sort, vaultConfig, folderName, libraryOnly, collectionId, includeCollectionChildren]);
 }

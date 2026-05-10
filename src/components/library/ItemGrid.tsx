@@ -17,11 +17,13 @@ interface ItemGridProps {
   emptyMessage: string;
   /** Passed to FilterBar for folder-scoped filtering */
   folderName?: string;
+  /** Passed to FilterBar for collection-scoped filtering */
+  collectionId?: string;
   /** Optional content rendered between filters and grid (e.g. folder breakdown) */
   children?: React.ReactNode;
 }
 
-export function ItemGrid({ items, fs, hasAnyItems, emptyMessage, folderName, children }: ItemGridProps) {
+export function ItemGrid({ items, fs, hasAnyItems, emptyMessage, folderName, collectionId, children }: ItemGridProps) {
   const viewMode = useLibraryStore((s) => s.viewMode);
   const isLoading = useLibraryStore((s) => s.isLoading);
   const storeError = useLibraryStore((s) => s.error);
@@ -38,7 +40,7 @@ export function ItemGrid({ items, fs, hasAnyItems, emptyMessage, folderName, chi
       )}
 
       {/* Filters — show as soon as we have any items */}
-      {hasAnyItems && <FilterBar folderName={folderName} />}
+      {hasAnyItems && <FilterBar folderName={folderName} collectionId={collectionId} />}
 
       {/* Initial loading with no items yet — centered spinner */}
       {isLoading && !hasAnyItems && (

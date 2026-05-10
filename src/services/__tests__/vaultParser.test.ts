@@ -210,14 +210,17 @@ formats: []
         'books': 'dir',
         'books/TestBook': 'dir',
         'books/TestBook/TestBook.md': { content: mdWithRemoteCover },
-        'books/SharedCovers': 'dir',
-        'books/SharedCovers/remote-cover.png': { content: '' },
+        // Image at root of a sibling item's _attachments (found via lazy index)
+        'books/OtherBook': 'dir',
+        'books/OtherBook/OtherBook.md': { content: `---\ntitle: "Other"\ntags: []\nauthors: []\nformats: []\n---\n` },
+        'books/OtherBook/remote-cover.png': { content: '' },
         'comics': 'dir',
       });
 
       const items = await parseVault(fs, defaultConfig);
+      const testBook = items.find(i => i.title === 'Test Book');
 
-      expect(items[0].cover).toBe('books/SharedCovers/remote-cover.png');
+      expect(testBook?.cover).toBe('books/OtherBook/remote-cover.png');
     });
 
     it('parses comics from individual folders with .md metadata', async () => {
