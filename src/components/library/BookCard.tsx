@@ -1,3 +1,4 @@
+import { useRef, useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import type { LibraryItem } from '@/types';
 import type { FSAdapter } from '@/services/vaultParser';
@@ -6,6 +7,68 @@ import { useCoverUrl } from '@/hooks/useCoverUrl';
 interface BookCardProps {
   item: LibraryItem;
   fs: FSAdapter | null;
+}
+
+// ---- Lazy cover image component ----
+
+/**
+ * Only triggers cover URL resolution when the element enters the viewport.
+ * Shows a loading spinner placeholder until the image is ready.
+ */
+function LazyCover({
+  fs,
+  coverPath,
+  archivePath,
+  alt,
+  className,
+  placeholder,
+}: {
+  fs: FSAdapter | null;
+  coverPath?: string;
+  archivePath?: string;
+  alt: string;
+  className?: string;
+  placeholder: React.ReactNode;
+}) {
+  const [visible, setVisible] = useState(false);
+  const sentinelRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const el = sentinelRef.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          setVisible(true);
+          observer.disconnect();
+        }
+      },
+      { rootMargin: '300px' }
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  const coverUrl = useCoverUrl(
+    visible ? fs : null,
+    visible ? coverPath : undefined,
+    visible ? archivePath : undefined
+  );
+
+  if (coverUrl) {
+    return <img src={coverUrl} alt={alt} className={className} loading="lazy" />;
+  }
+
+  return (
+    <div ref={sentinelRef} className="w-full h-full flex items-center justify-center">
+      {visible && (coverPath || archivePath) ? (
+        // Loading state
+        <div className="w-5 h-5 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
+      ) : (
+        placeholder
+      )}
+    </div>
+  );
 }
 
 const statusColors: Record<string, string> = {
@@ -40,7 +103,6 @@ export function BookCard({ item, fs }: BookCardProps) {
   const archivePath = !item.cover && isComic(item)
     ? (item.filePaths.cbz || undefined)
     : undefined;
-  const coverUrl = useCoverUrl(fs, item.cover, archivePath);
 
   const linkTo = item.isCollection
     ? `/collection/${encodeURIComponent(item.id)}`
@@ -53,20 +115,20 @@ export function BookCard({ item, fs }: BookCardProps) {
     >
       {/* Cover */}
       <div className="relative aspect-[2/3] bg-surface-alt overflow-hidden">
-        {coverUrl ? (
-          <img
-            src={coverUrl}
-            alt={item.title}
-            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-            loading="lazy"
-          />
-        ) : (
-          <div className="w-full h-full flex items-center justify-center bg-primary-light">
-            <span className="text-4xl font-bold text-primary opacity-50">
-              {item.isCollection ? 'S' : formatIcon(item.formats)}
-            </span>
-          </div>
-        )}
+        <LazyCover
+          fs={fs}
+          coverPath={item.cover}
+          archivePath={archivePath}
+          alt={item.title}
+          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+          placeholder={
+            <div className="w-full h-full flex items-center justify-center bg-primary-light">
+              <span className="text-4xl font-bold text-primary opacity-50">
+                {item.isCollection ? 'S' : formatIcon(item.formats)}
+              </span>
+            </div>
+          }
+        />
 
         {/* Collection badge (top-left) */}
         {item.isCollection && (
@@ -160,7 +222,6 @@ export function BookListItem({ item, fs }: BookCardProps) {
   const archivePath = !item.cover && isComic(item)
     ? (item.filePaths.cbz || undefined)
     : undefined;
-  const coverUrl = useCoverUrl(fs, item.cover, archivePath);
 
   const linkTo = item.isCollection
     ? `/collection/${encodeURIComponent(item.id)}`
@@ -173,15 +234,20 @@ export function BookListItem({ item, fs }: BookCardProps) {
     >
       {/* Cover thumbnail */}
       <div className="w-12 h-16 rounded overflow-hidden bg-surface-alt shrink-0">
-        {coverUrl ? (
-          <img src={coverUrl} alt={item.title} className="w-full h-full object-cover" loading="lazy" />
-        ) : (
-          <div className="w-full h-full flex items-center justify-center bg-primary-light">
-            <span className="text-lg font-bold text-primary opacity-50">
-              {item.isCollection ? 'S' : formatIcon(item.formats)}
-            </span>
-          </div>
-        )}
+        <LazyCover
+          fs={fs}
+          coverPath={item.cover}
+          archivePath={archivePath}
+          alt={item.title}
+          className="w-full h-full object-cover"
+          placeholder={
+            <div className="w-full h-full flex items-center justify-center bg-primary-light">
+              <span className="text-lg font-bold text-primary opacity-50">
+                {item.isCollection ? 'S' : formatIcon(item.formats)}
+              </span>
+            </div>
+          }
+        />
       </div>
 
       {/* Info */}

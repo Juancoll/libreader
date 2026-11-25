@@ -12,6 +12,9 @@ const coverUrlCache = new Map<string, string>();
 const MAX_CONCURRENT = 6;
 let running = 0;
 const queue: Array<() => void> = [];
+let batchStart = 0;
+let batchCount = 0;
+let batchCached = 0;
 
 function enqueue<T>(fn: () => Promise<T>): Promise<T> {
   return new Promise<T>((resolve, reject) => {
@@ -21,6 +24,12 @@ function enqueue<T>(fn: () => Promise<T>): Promise<T> {
         running--;
         if (queue.length > 0) {
           queue.shift()!();
+        }
+        // Log when batch finishes (no more running or queued)
+        if (running === 0 && queue.length === 0 && batchCount > 0) {
+          console.log(`[covers] ${batchCount} loaded (${batchCached} cached) in ${performance.now() - batchStart | 0}ms`);
+          batchCount = 0;
+          batchCached = 0;
         }
       });
     };
@@ -64,10 +73,20 @@ export function useCoverUrl(
       const cached = coverUrlCache.get(coverPath);
       if (cached) {
         setUrl(cached);
+        batchCached++;
         return;
       }
 
-      enqueue(() => fs.getFileUrl(coverPath)).then((blobUrl) => {
+      if (batchCount === 0) batchStart = performance.now();
+      batchCount++;
+
+      enqueue(() => {
+        const t0 = performance.now();
+        return fs.getFileUrl(coverPath).then((blobUrl) => {
+          console.log(`[cover] ${coverPath.split('/').pop()} ${performance.now() - t0 | 0}ms (queue: ${queue.length})`);
+          return blobUrl;
+        });
+      }).then((blobUrl) => {
         coverUrlCache.set(coverPath, blobUrl);
         if (!cancelRef.current) setUrl(blobUrl);
       }).catch(() => {
@@ -108,11 +127,13 @@ async function extractComicCover(
   }
 
   try {
+    const t0 = performance.now();
     const data = await fs.readBinaryFile(archivePath);
     if (cancelRef.current) return;
 
     const pages = extractCbz(data);
     if (pages.length > 0 && !cancelRef.current) {
+      console.log(`[cover:cbz] ${archivePath.split('/').pop()} ${performance.now() - t0 | 0}ms`);
       const coverUrl = pages[0].url;
       comicCoverCache.set(archivePath, coverUrl);
       extractedUrlRef.current = coverUrl;

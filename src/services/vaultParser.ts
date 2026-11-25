@@ -363,10 +363,9 @@ export class WebFSAdapter implements FSAdapter {
   }
 
   cleanup(): void {
-    for (const url of this.urlCache.values()) {
-      URL.revokeObjectURL(url);
-    }
-    this.urlCache.clear();
+    // Intentionally empty — all caches (handleCache, urlCache) must persist
+    // across component unmount/remount during navigation.
+    // Resources are freed when the page is closed.
   }
 }
 
